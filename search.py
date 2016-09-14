@@ -18,33 +18,15 @@ limiter = Limiter(
 )
 session_limit = 10
 paragraph_limit = 3
-ix = None
-
-
-def init():
-    global ix
-    if not ix:
-        os.chdir(sys.path[0])
-        indexdir = 'indexdir'
-
-        try:
-            ix = index.open_dir(indexdir)
-        except index.EmptyIndexError:
-            if not os.path.isdir(indexdir):
-                os.mkdir(indexdir)
-            ix = spec.create_index(indexdir)
-        # ix = spec.create_index(indexdir)
 
 
 @app.route('/')
 def search_form():
-    init()
     return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
 
 
 @app.route('/', methods=['POST'])
 def search_form_post():
-    init()
     text = request.form['text']
 
     with ix.searcher() as searcher:
@@ -95,6 +77,18 @@ def get_matching_paragraph_idxs(results, hit):
         if paragraph_idx not in matching_paragraph_idxs:
             matching_paragraph_idxs.append(paragraph_idx)
     return matching_paragraph_idxs
+
+
+os.chdir(sys.path[0])
+indexdir = 'indexdir'
+
+try:
+    ix = index.open_dir(indexdir)
+except index.EmptyIndexError:
+    if not os.path.isdir(indexdir):
+        os.mkdir(indexdir)
+    ix = spec.create_index(indexdir)
+# ix = spec.create_index(indexdir)
 
 if __name__ == '__main__':
     app.run()
