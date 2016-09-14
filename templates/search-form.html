@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="eng">
+<body style="width: 65em; font-family: Verdana, sans-serif; font-size: 0.9em;">
+<h1>Seth corpus search</h1>
+<p>Books searched: {{ books|join(', ', attribute='abbr') }}</p>
+<p>Result limits: {{ session_limit }} sessions, {{ paragraph_limit }} paragraphs</p>
+<p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
+<p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
+<p>Examples:</p>
+<ul>
+    <li>beer OR wine</li>
+    <li>cat mouse</li>
+    <li>"conscious mind"</li>
+    <li>"mind matter"~2</li>
+</ul>
+<form action="." method="post">
+    <input type="text" name="text" title="text" value="{{ query }}" style="width: 20em;">
+    <input type="submit" name="search-form" value="Search">
+</form>
+<br />
+{% autoescape false %}
+{{ result }}
+{% endautoescape %}
+</body>
+</html>
