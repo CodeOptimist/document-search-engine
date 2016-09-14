@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, re
 from whoosh import highlight, index
 from whoosh.qparser import QueryParser
 from CommonMark import commonmark
@@ -18,18 +18,37 @@ limiter = Limiter(
 )
 session_limit = 10
 paragraph_limit = 3
+ix = None
+
+
+def init():
+    global ix
+    if not ix:
+        os.chdir(sys.path[0])
+        indexdir = 'indexdir'
+
+        try:
+            ix = index.open_dir(indexdir)
+        except index.EmptyIndexError:
+            if not os.path.isdir(indexdir):
+                os.mkdir(indexdir)
+            ix = spec.create_index(indexdir)
+        # ix = spec.create_index(indexdir)
 
 
 @app.route('/')
 def search_form():
+    init()
     return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
 
 
 @app.route('/', methods=['POST'])
 def search_form_post():
+    init()
     text = request.form['text']
 
     with ix.searcher() as searcher:
+        text = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), text)
         query = QueryParser('session', ix.schema).parse(text)
         results = searcher.search(query, limit=session_limit)
 
@@ -76,24 +95,6 @@ def get_matching_paragraph_idxs(results, hit):
         if paragraph_idx not in matching_paragraph_idxs:
             matching_paragraph_idxs.append(paragraph_idx)
     return matching_paragraph_idxs
-
-
-@app.template_filter('highlight')
-def highlight_filter(hit):
-    pass
-
-
-os.chdir(sys.path[0])
-indexdir = 'indexdir'
-
-try:
-    ix = index.open_dir(indexdir)
-except index.EmptyIndexError:
-    if not os.path.isdir(indexdir):
-        os.mkdir(indexdir)
-    ix = spec.create_index(indexdir)
-
-# ix = spec.create_index(indexdir)
 
 if __name__ == '__main__':
     app.run()

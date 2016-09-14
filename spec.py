@@ -5,9 +5,38 @@ from whoosh.fields import ID, TEXT, NUMERIC, Schema
 from whoosh import index, analysis
 
 
+def add_part_info(book, d, _part):
+    part = book['part_split'] + _part
+    part_num = book['part_num_re'].search(_part).group(1)
+    part_num = part_num.replace('ONE', '1').replace('TWO', '2').replace('THREE', '3').replace('FOUR', '4')
+    d['part_num'] = part_num
+
+    part_title = None
+    if 'part_title_re' in book:
+        part_title = book['part_title_re'].search(_part).group(1)
+        part_title = part_title.replace('\n', '').replace('*', '')
+        part_title = re.sub(r' +', r' ', part_title).title()
+    d['part_title'] = part_title
+    print("Part", d['part_num'], d['part_title'])
+    return part
+
+
+def add_chapter_info(book, d, _chapter):
+    chapter = book['chapter_split'] + _chapter
+    chapter_id = book['chapter_id_re'].search(_chapter).group(1)
+    chapter_id = ("Chapter " if chapter_id.isdigit() else "Session ") + chapter_id.title()
+    d['chapter_id'] = chapter_id
+    chapter_title = book['chapter_title_re'].search(_chapter).group(1)
+    chapter_title = chapter_title.replace('\n', '').replace('*', '')
+    chapter_title = re.sub(r' +', r' ', chapter_title).title()
+    d['chapter_title'] = chapter_title
+    print(d['chapter_id'], d['chapter_title'])
+    return chapter
+
+
 def create_index(indexdir):
     schema = Schema(book_name=ID(stored=True), part_title=ID(stored=True), chapter_title=ID(stored=True),
-                    book_abbr=ID(stored=True), part_num=NUMERIC(stored=True),
+                    book=ID(stored=True), book_abbr=ID(stored=True), part_num=NUMERIC(stored=True),
                     chapter_id=ID(stored=True), session_id=ID(stored=True),
                     session=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
 
@@ -21,39 +50,18 @@ def create_index(indexdir):
         d = {
             'book_name': book['name'],
             'book_abbr': book['abbr'],
+            'book': book['abbr'].lower(),
         }
 
         parts = text.split(book['part_split'])[1:] if 'part_split' in book else [text]
-        for _part in parts:
-            part = _part
-
+        for part in parts:
             if 'part_split' in book:
-                part = book['part_split'] + part
-                part_num = book['part_num_re'].search(_part).group(1)
-                part_num = part_num.replace('ONE', '1').replace('TWO', '2').replace('THREE', '3').replace('FOUR', '4')
-                d['part_num'] = part_num
-
-                part_title = None
-                if 'part_title_re' in book:
-                    part_title = book['part_title_re'].search(_part).group(1)
-                    part_title = part_title.replace('\n', '').replace('*', '')
-                    part_title = re.sub(r' +', r' ', part_title).title()
-                d['part_title'] = part_title
-                print("Part", d['part_num'], d['part_title'])
+                part = add_part_info(book, d, part)
 
             last_session_id = None
             chapters = part.split(book['chapter_split'])
-            for _chapter in chapters[1:]:
-                chapter = book['chapter_split'] + _chapter
-
-                chapter_id = book['chapter_id_re'].search(_chapter).group(1)
-                chapter_id = ("Chapter " if chapter_id.isdigit() else "Session ") + chapter_id.title()
-                d['chapter_id'] = chapter_id
-                chapter_title = book['chapter_title_re'].search(_chapter).group(1)
-                chapter_title = chapter_title.replace('\n', '').replace('*', '')
-                chapter_title = re.sub(r' +', r' ', chapter_title).title()
-                d['chapter_title'] = chapter_title
-                print(d['chapter_id'], d['chapter_title'])
+            for chapter in chapters[1:]:
+                chapter = add_chapter_info(book, d, chapter)
 
                 sessions = book['session_id_re'].split(chapter)
                 top_section = sessions[0]
@@ -79,6 +87,6 @@ def create_index(indexdir):
                     print(session_id)
 
 
-
     writer.commit()
     return ix
+
