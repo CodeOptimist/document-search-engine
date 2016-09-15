@@ -58,5 +58,6 @@ class ConsistentFragmentScorer(BasicFragmentScorer):
         # random.seed(f.__repr__())
         # score += random.random()
 
-        score += 1 / f.startchar
+        if f.startchar:
+            score += 1 / f.startchar
         return score
