@@ -16,8 +16,13 @@ limiter = Limiter(
     key_func=get_remote_address,
     global_limits=["10 per minute", "100 per hour", "1000 per day"]
 )
-session_limit = 10
+session_limit = 5
 paragraph_limit = 3
+
+
+@app.template_filter('link_abbr')
+def link_abbr(abbr):
+    return """<a href="#" onclick="filterBook('{0}')">{0}</a>""".format(abbr)
 
 
 @app.route('/')
@@ -27,11 +32,11 @@ def search_form():
 
 @app.route('/', methods=['POST'])
 def search_form_post():
-    text = request.form['text']
+    input = request.form['query']
 
     with ix.searcher() as searcher:
-        text = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), text)
-        query = QueryParser('session', ix.schema).parse(text)
+        input = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), input)
+        query = QueryParser('session', ix.schema).parse(input)
         results = searcher.search(query, limit=session_limit)
 
         output = []
@@ -48,8 +53,8 @@ def search_form_post():
 
             output.append("""
 <details>
-<span style="font-size: 0.9em">- {0[book_name]}<br />{1}- {0[chapter_title]}</span>
-<summary>{0[book_abbr]} {0[chapter_id]} {0[session_id]}</summary>
+<span style="font-size: 0.9em">- {0[book_name]}<br />{1}- {0[chapter_title]}<br /></span>
+<summary>{0[book_abbr]} {0[chapter_id]} {0[session_id]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
 </details>
 """.format(hit, "- {0[part_title]}<br />".format(hit) if 'part_title' in hit else ''))
             for idx in paragraph_idxs:
@@ -59,7 +64,7 @@ def search_form_post():
 
         output_str = '\n\n'.join(output)
         result = commonmark(output_str)
-        return render_template("search-form.html", books=Books.indexed, query=text, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
+        return render_template("search-form.html", books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
 
 
 def get_matching_paragraph_idxs(results, hit):
@@ -82,13 +87,13 @@ def get_matching_paragraph_idxs(results, hit):
 os.chdir(sys.path[0])
 indexdir = 'indexdir'
 
-try:
-    ix = index.open_dir(indexdir)
-except index.EmptyIndexError:
-    if not os.path.isdir(indexdir):
-        os.mkdir(indexdir)
-    ix = spec.create_index(indexdir)
-# ix = spec.create_index(indexdir)
+# try:
+#     ix = index.open_dir(indexdir)
+# except index.EmptyIndexError:
+#     if not os.path.isdir(indexdir):
+#         os.mkdir(indexdir)
+#     ix = spec.create_index(indexdir)
+ix = spec.create_index(indexdir)
 
 if __name__ == '__main__':
     app.run()

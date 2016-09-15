@@ -35,7 +35,8 @@ def add_chapter_info(book, d, _chapter):
 
 
 def create_index(indexdir):
-    schema = Schema(book_name=ID(stored=True), part_title=ID(stored=True), chapter_title=ID(stored=True),
+    schema = Schema(book_name=ID(stored=True), book_url=ID(stored=True),
+                    part_title=ID(stored=True), chapter_title=ID(stored=True),
                     book=ID(stored=True), book_abbr=ID(stored=True), part_num=NUMERIC(stored=True),
                     chapter_id=ID(stored=True), session_id=ID(stored=True),
                     session=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
@@ -50,15 +51,15 @@ def create_index(indexdir):
         d = {
             'book_name': book['name'],
             'book_abbr': book['abbr'],
+            'book_url': book['url'],
             'book': book['abbr'].lower(),
         }
 
+        last_session_id = None
         parts = text.split(book['part_split'])[1:] if 'part_split' in book else [text]
         for part in parts:
             if 'part_split' in book:
                 part = add_part_info(book, d, part)
-
-            last_session_id = None
             chapters = part.split(book['chapter_split'])
             for chapter in chapters[1:]:
                 chapter = add_chapter_info(book, d, chapter)
@@ -66,8 +67,8 @@ def create_index(indexdir):
                 sessions = book['session_id_re'].split(chapter)
                 top_section = sessions[0]
                 m = re.findall(r'\n[\s\n]*', top_section)
-                starts_with_new_session = len(m) <= 3
-                if not starts_with_new_session:
+                continues_session = len(m) > 3 and last_session_id
+                if continues_session:
                     d['session_id'] = last_session_id
                     d['session'] = top_section
                     # writer.add_document(**d, session_id=last_session_id, session=top_section)
@@ -75,14 +76,16 @@ def create_index(indexdir):
 
                 for idx, (session_id, _session) in enumerate(zip(sessions[1::2], sessions[2::2])):
                     session = session_id + _session
-                    if idx == 0 and starts_with_new_session:
+                    if idx == 0 and not continues_session:
                         session = top_section + session
 
                     session_id = session_id.title()
                     d['session_id'] = session_id
                     d['session'] = session
                     # writer.add_document(**d, session_id=session_id, session=session)
-                    writer.add_document(**d)
+
+                    if session:
+                        writer.add_document(**d)
                     last_session_id = session_id
                     print(session_id)
 

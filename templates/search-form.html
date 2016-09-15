@@ -1,8 +1,20 @@
 <!DOCTYPE html>
 <html lang="eng">
+<header>
+    <script>
+        function filterBook(abbr) {
+            q = document.getElementById('query').value;
+            if (/\bbook:/i.test(q)) {
+                new_q = q.replace(/\bbook:\w+/i, "book:" + abbr.toLowerCase());
+            } else {
+                new_q = (q + " book:" + abbr.toLowerCase()).trim();
+            }
+            document.getElementById('query').value = new_q;
+        }
+    </script>
+</header>
 <body style="width: 65em; font-family: Verdana, sans-serif; font-size: 0.9em;">
 <h1>Seth corpus search</h1>
-<p>Books searched: {{ books|join(', ', attribute='abbr') }}</p>
 <p>Result limits: {{ session_limit }} sessions, {{ paragraph_limit }} paragraphs</p>
 <p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
 <p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
@@ -12,13 +24,16 @@
     <li>cat mouse</li>
     <li>"conscious mind"</li>
     <li>book:nopr exercise</li>
+    <li>NOT book:WTH exercise</li>
     <li>"mind matter"~2</li>
     <li>"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)</li>
 </ul>
+<p>Books: {{ books|map(attribute='abbr')|map('link_abbr')|join(', ')|safe }}</p>
 <form action="." method="post">
-    <input type="text" name="text" title="text" value="{{ query }}" style="width: 20em;">
+    <input type="text" id="query" name="query" title="query" value="{{ query }}" style="width: 20em;">
     <input type="submit" name="search-form" value="Search">
 </form>
+<p>All results copyright © Laurel Davies-Butts</p>
 <br />
 {% autoescape false %}
 {{ result }}
