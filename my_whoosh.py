@@ -1,4 +1,5 @@
-from whoosh.highlight import Fragmenter, Fragment, Formatter
+from whoosh.highlight import Fragmenter, Fragment, Formatter, BasicFragmentScorer
+import random
 
 
 class ParagraphFragmenter(Fragmenter):
@@ -48,3 +49,14 @@ class TokenPosFormatter(Formatter):
         if token.matched:
             return str(token.startchar) + " "
         return ""
+
+
+class ConsistentFragmentScorer(BasicFragmentScorer):
+    def __call__(self, f):
+        score = super(ConsistentFragmentScorer, self).__call__(f)
+
+        # random.seed(f.__repr__())
+        # score += random.random()
+
+        score += 1 / f.startchar
+        return score

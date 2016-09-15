@@ -1,8 +1,9 @@
 import os, sys, re
 from whoosh import highlight, index
+from whoosh.highlight import BasicFragmentScorer
 from whoosh.qparser import QueryParser
 from CommonMark import commonmark
-from my_whoosh import ParagraphFragmenter, TokenPosFormatter
+from my_whoosh import ParagraphFragmenter, TokenPosFormatter, ConsistentFragmentScorer
 from books import Books
 import spec
 
@@ -35,16 +36,24 @@ def search_form_post():
     input = request.form['query']
 
     with ix.searcher() as searcher:
+        if not input.strip():
+            return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
+
         input = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), input)
         query = QueryParser('session', ix.schema).parse(input)
         results = searcher.search(query, limit=session_limit)
 
-        output = []
+        output = ["## Results for {}".format(query)]
         for hit in results:
+            results.fragmenter = ParagraphFragmenter()
+            results.order = highlight.SCORE
+            results.scorer = ConsistentFragmentScorer()
+            results.formatter = TokenPosFormatter()
             paragraph_idxs = get_matching_paragraph_idxs(results, hit)
             # print(paragraph_idxs)
 
             results.fragmenter = highlight.WholeFragmenter(charlimit=None)
+            results.scorer = BasicFragmentScorer()
             results.formatter = highlight.HtmlFormatter()
             highlights = hit.highlights('session', top=paragraph_limit)
             if not highlights:
@@ -69,10 +78,6 @@ def search_form_post():
 
 def get_matching_paragraph_idxs(results, hit):
     matching_paragraph_idxs = []
-    results.fragmenter = ParagraphFragmenter()
-    results.order = highlight.SCORE
-    results.formatter = TokenPosFormatter()
-
     fragments_tokens_pos = hit.highlights('session', top=paragraph_limit).split('\n')
     fragments_tokens_pos = filter(None, fragments_tokens_pos)
 
@@ -87,13 +92,13 @@ def get_matching_paragraph_idxs(results, hit):
 os.chdir(sys.path[0])
 indexdir = 'indexdir'
 
-# try:
-#     ix = index.open_dir(indexdir)
-# except index.EmptyIndexError:
-#     if not os.path.isdir(indexdir):
-#         os.mkdir(indexdir)
-#     ix = spec.create_index(indexdir)
-ix = spec.create_index(indexdir)
+try:
+    ix = index.open_dir(indexdir)
+except index.EmptyIndexError:
+    if not os.path.isdir(indexdir):
+        os.mkdir(indexdir)
+    ix = spec.create_index(indexdir)
+# ix = spec.create_index(indexdir)
 
 if __name__ == '__main__':
     app.run()
