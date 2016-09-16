@@ -6,8 +6,9 @@ from whoosh import index, analysis
 
 
 def clean(_text):
-    text = _text.replace('\n', '').replace('*', '').replace('#', '').strip()
-    text = re.sub(r' +', r' ', text).title()
+    text = re.sub(r'[\*\#>]+', '', _text).strip()
+    text = re.sub(r'[ \xa0\n]+', r' ', text).title()
+    text = re.sub(r'\bEsp\b', r'ESP', text)
     return text
 
 
@@ -15,12 +16,19 @@ def add_document(writer, d, session, content):
     d['session'] = session
     d['content'] = content
     d['part_title'] = ""
+
     if 'part' in d:
-        title = re.sub(r'^Part (One|Two)\b\s*', r'', d['part'])
+        title = re.sub(r'^Part \w+\s*', r'', d['part'])
         if title:
             d['part_title'] = "- {}<br />".format(title)
-    d['chapter_num'] = re.sub(r'^(Chapter \d+).*', r'\1', d['chapter'])
-    d['chapter_title'] = re.sub(r'^Chapter \d+\s*', r'', d['chapter'])
+
+    d['chapter_num'] = re.sub(r'^(Preface|Chapter \d+|Session \w+).*', r'\1', d['chapter'])
+
+    d['chapter_title'] = ""
+    chapter_title = re.sub(r'^(Preface By Seth|Chapter \d+|Session \w+|Appendix)\s*', r'', d['chapter'])
+    if chapter_title:
+        d['chapter_title'] = "- {}<br />".format(chapter_title)
+
     writer.add_document(**d)
 
 
@@ -53,11 +61,13 @@ def create_index(indexdir):
 
         last_session_id = None
         # parts = text.split(book['part_split'])[1:] if 'part_split' in book else [text]
-        parts = book['part_id_re'].split(text)
+        parts = book['part_id_re'].split(text)[:-2]
         for _part_id, _part in zip(parts[1::2], parts[2::2]):
             part = _part_id + _part
             part_id = clean(_part_id)
-            d['part'] = part_id
+            if part_id not in ("Preface By Seth", "Chapter 1", "Session One", "Chapter 7"):
+                d['part'] = part_id
+                print(part_id)
 
             chapters = book['chapter_id_re'].split(part)
             for _chapter_id, _chapter in zip(chapters[1::2], chapters[2::2]):
@@ -67,8 +77,6 @@ def create_index(indexdir):
 
                 if chapter_id == 'Appendix':
                     del d['part']
-                elif chapter_id == 'About The Author':
-                    break
                 print(chapter_id)
 
                 sessions = book['session_id_re'].split(chapter)
