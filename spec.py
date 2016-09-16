@@ -1,43 +1,38 @@
 import re
 from books import Books
 
-from whoosh.fields import ID, TEXT, NUMERIC, Schema
+from whoosh.fields import ID, TEXT, Schema, STORED
 from whoosh import index, analysis
 
 
-def add_part_info(book, d, _part):
-    part = book['part_split'] + _part
-    part_num = book['part_num_re'].search(_part).group(1)
-    part_num = part_num.replace('ONE', '1').replace('TWO', '2').replace('THREE', '3').replace('FOUR', '4')
-    d['part_num'] = part_num
-
-    part_title = None
-    if 'part_title_re' in book:
-        part_title = book['part_title_re'].search(_part).group(1)
-        part_title = part_title.replace('\n', '').replace('*', '')
-        part_title = re.sub(r' +', r' ', part_title).title()
-    d['part_title'] = part_title
-    print("Part", part_num, part_title)
-    return part
+def clean(_text):
+    text = _text.replace('\n', '').replace('*', '').replace('#', '').strip()
+    text = re.sub(r' +', r' ', text).title()
+    return text
 
 
-def add_chapter_info(book, d, _chapter):
-    chapter = book['chapter_split'] + _chapter
-    chapter_id = book['chapter_id_re'].search(_chapter).group(1)
-    chapter_id = ("Chapter " if chapter_id.isdigit() else "Session ") + chapter_id.title()
-    d['chapter'] = chapter_id
-    chapter_title = book['chapter_title_re'].search(_chapter).group(1)
-    chapter_title = chapter_title.replace('\n', '').replace('*', '')
-    chapter_title = re.sub(r' +', r' ', chapter_title).title()
-    d['chapter_title'] = chapter_title
-    print(chapter_id, chapter_title)
-    return chapter
+def add_document(writer, d, session, content):
+    d['session'] = session
+    d['content'] = content
+    d['part_title'] = ""
+    if 'part' in d:
+        title = re.sub(r'^Part (One|Two)\b\s*', r'', d['part'])
+        if title:
+            d['part_title'] = "- {}<br />".format(title)
+    d['chapter_num'] = re.sub(r'^(Chapter \d+).*', r'\1', d['chapter'])
+    d['chapter_title'] = re.sub(r'^Chapter \d+\s*', r'', d['chapter'])
+    writer.add_document(**d)
 
 
 def create_index(indexdir):
-    schema = Schema(book_name=ID(stored=True), book_url=ID(stored=True),
-                    part_title=ID(stored=True), chapter_title=ID(stored=True),
-                    book=ID(stored=True), book_abbr=ID(stored=True), part_num=NUMERIC(stored=True),
+    schema = Schema(book_abbr=STORED(),
+                    book_name=STORED(),
+                    book_url=STORED(),
+                    part_title=STORED(),
+                    chapter_num=STORED(),
+                    chapter_title=STORED(),
+                    book=ID(stored=True),
+                    part=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
                     chapter=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
                     content=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
@@ -57,36 +52,40 @@ def create_index(indexdir):
         }
 
         last_session_id = None
-        parts = text.split(book['part_split'])[1:] if 'part_split' in book else [text]
-        for part in parts:
-            if 'part_split' in book:
-                part = add_part_info(book, d, part)
-            chapters = part.split(book['chapter_split'])
-            for chapter in chapters[1:]:
-                chapter = add_chapter_info(book, d, chapter)
+        # parts = text.split(book['part_split'])[1:] if 'part_split' in book else [text]
+        parts = book['part_id_re'].split(text)
+        for _part_id, _part in zip(parts[1::2], parts[2::2]):
+            part = _part_id + _part
+            part_id = clean(_part_id)
+            d['part'] = part_id
+
+            chapters = book['chapter_id_re'].split(part)
+            for _chapter_id, _chapter in zip(chapters[1::2], chapters[2::2]):
+                chapter = _chapter_id + _chapter
+                chapter_id = clean(_chapter_id)
+                d['chapter'] = chapter_id
+
+                if chapter_id == 'Appendix':
+                    del d['part']
+                elif chapter_id == 'About The Author':
+                    break
+                print(chapter_id)
 
                 sessions = book['session_id_re'].split(chapter)
-                top_section = sessions[0]
-                m = re.findall(r'\n[\s\n]*', top_section)
-                continues_session = len(m) > 3 and last_session_id
-                if continues_session:
-                    d['session'] = last_session_id
-                    d['content'] = top_section
-                    # writer.add_document(**d, session=last_session_id, content=top_section)
-                    writer.add_document(**d)
+                continues_session = None
+                if chapter_id != 'Appendix':
+                    continues_session = bool(re.search(r'[a-z]', sessions[0])) and last_session_id
+                    if continues_session:
+                        add_document(writer, d, last_session_id, sessions[0])
 
-                for idx, (session_id, _session) in enumerate(zip(sessions[1::2], sessions[2::2])):
-                    session = session_id + _session
-                    if idx == 0 and not continues_session:
-                        session = top_section + session
+                for idx, (_session_id, _session) in enumerate(zip(sessions[1::2], sessions[2::2])):
+                    session = _session_id + _session
+                    if idx == 0 and continues_session == False:
+                        session = sessions[0] + session
 
-                    session_id = session_id.title()
-                    d['session'] = session_id
-                    d['content'] = session
-                    # writer.add_document(**d, session=session_id, content=session)
-
+                    session_id = clean(_session_id)
                     if session:
-                        writer.add_document(**d)
+                        add_document(writer, d, session_id, session)
                     last_session_id = session_id
                     print(session_id)
 

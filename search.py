@@ -43,7 +43,10 @@ def search_form_post():
         if isinstance(query, _NullQuery):
             return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
 
-        results = searcher.search(query, limit=session_limit)
+        if 'content:' in str(query):
+            results = searcher.search(query, limit=session_limit)
+        else:
+            results = searcher.search(query, limit=None)
 
         output = ["## Results for {}".format(query)]
         for hit in results:
@@ -64,10 +67,10 @@ def search_form_post():
 
             output.append("""
 <details>
-<span style="font-size: 0.9em">- {0[book_name]}<br />{1}- {0[chapter_title]}<br /></span>
-<summary>{0[book_abbr]} {0[chapter]} {0[session]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
+<span style="font-size: 0.9em">- {0[book_name]}<br />{0[part_title]}- {0[chapter_title]}<br /></span>
+<summary>{0[book_abbr]} {0[chapter_num]} {0[session]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
 </details>
-""".format(hit, "- {0[part_title]}<br />".format(hit) if 'part_title' in hit else ''))
+""".format(hit))
             for idx in paragraph_idxs:
                 matching_paragraph = highlights[idx]
                 output.append("* {}".format(matching_paragraph))
@@ -94,13 +97,13 @@ def get_matching_paragraph_idxs(results, hit):
 os.chdir(sys.path[0])
 indexdir = 'indexdir'
 
-try:
-    ix = index.open_dir(indexdir)
-except index.EmptyIndexError:
-    if not os.path.isdir(indexdir):
-        os.mkdir(indexdir)
-    ix = spec.create_index(indexdir)
-# ix = spec.create_index(indexdir)
+# try:
+#     ix = index.open_dir(indexdir)
+# except index.EmptyIndexError:
+#     if not os.path.isdir(indexdir):
+#         os.mkdir(indexdir)
+#     ix = spec.create_index(indexdir)
+ix = spec.create_index(indexdir)
 
 if __name__ == '__main__':
     app.run()
