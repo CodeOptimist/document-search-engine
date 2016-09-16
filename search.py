@@ -17,7 +17,7 @@ app = Flask(__name__)
 limiter = Limiter(
     app,
     key_func=get_remote_address,
-    global_limits=["10 per minute", "100 per hour", "1000 per day"]
+    global_limits=["15 per minute", "100 per hour", "1000 per day"]
 )
 session_limit = 5
 paragraph_limit = 3
@@ -46,7 +46,7 @@ def search_form_post():
         if 'content:' in str(query):
             results = searcher.search(query, limit=session_limit)
         else:
-            results = searcher.search(query, limit=None)
+            results = searcher.search(query, limit=150)
 
         output = ["## Results for {}".format(query)]
         for hit in results:
@@ -97,13 +97,18 @@ def get_matching_paragraph_idxs(results, hit):
 os.chdir(sys.path[0])
 indexdir = 'indexdir'
 
-# try:
-#     ix = index.open_dir(indexdir)
-# except index.EmptyIndexError:
-#     if not os.path.isdir(indexdir):
-#         os.mkdir(indexdir)
-#     ix = spec.create_index(indexdir)
-ix = spec.create_index(indexdir)
+if not os.path.isdir(indexdir):
+    os.mkdir(indexdir)
+
+# rebuild = True
+rebuild = False
+if rebuild:
+    ix = spec.create_index(indexdir)
+else:
+    try:
+        ix = index.open_dir(indexdir)
+    except index.EmptyIndexError:
+        ix = spec.create_index(indexdir)
 
 if __name__ == '__main__':
     app.run()

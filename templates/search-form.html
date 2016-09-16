@@ -19,15 +19,15 @@
         }
     </script>
     <style>
-        #examples a, #books a {text-decoration: none;}
+        .examples a, #books a {text-decoration: none;}
     </style>
 </head>
 <body style="width: 65em; font-family: Verdana, sans-serif; font-size: 0.9em;">
 <h1>Seth corpus search</h1>
 <p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
 <p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
-<p>Examples:</p>
-<ul id="examples">
+<div><p>Examples:</p>
+<ul class="examples">
     <li><a href="#" onclick="example(this)">beer OR wine</a></li>
     <li><a href="#" onclick="example(this)">cat mouse</a></li>
     <li><a href="#" onclick="example(this)">"conscious mind"</a></li>
@@ -36,6 +36,16 @@
     <li><a href="#" onclick="example(this)">NOT book:wth exercise</a></li>
     <li><a href="#" onclick="example(this)">"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)</a></li>
 </ul>
+<p>Leave out the search words for a session list:</p>
+<ul class="examples">
+    <li><a href="#" onclick="example(this)">chapter:22</a></li>
+    <li><a href="#" onclick="example(this)">chapter:dreams</a></li>
+    <li><a href="#" onclick="example(this)">chapter:(preface OR appendix)</a></li>
+    <li><a href="#" onclick="example(this)">session:636</a></li>
+    <li><a href="#" onclick="example(this)">session:(January 1977)</a></li>
+    <li><a href="#" onclick="example(this)">book:tma chapter:*teen</a></li>
+</ul>
+</div>
 <p id="books">Books: {{ books|map(attribute='abbr')|map('link_abbr')|join(', ')|safe }}</p>
 <form id="search-form" action="." method="post">
     <input type="text" id="query" name="query" title="query" value="{{ query }}" style="width: 30em;">

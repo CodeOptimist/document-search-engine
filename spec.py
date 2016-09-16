@@ -41,7 +41,7 @@ def create_index(indexdir):
                     chapter_title=STORED(),
                     book=ID(stored=True),
                     part=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
-                    chapter=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
+                    chapter=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
                     content=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
 
@@ -61,7 +61,7 @@ def create_index(indexdir):
 
         last_session_id = None
         # parts = text.split(book['part_split'])[1:] if 'part_split' in book else [text]
-        parts = book['part_id_re'].split(text)[:-2]
+        parts = book['part_re'].split(text)[:-2]
         for _part_id, _part in zip(parts[1::2], parts[2::2]):
             part = _part_id + _part
             part_id = clean(_part_id)
@@ -69,7 +69,7 @@ def create_index(indexdir):
                 d['part'] = part_id
                 print(part_id)
 
-            chapters = book['chapter_id_re'].split(part)
+            chapters = book['section_re'].split(part)
             for _chapter_id, _chapter in zip(chapters[1::2], chapters[2::2]):
                 chapter = _chapter_id + _chapter
                 chapter_id = clean(_chapter_id)
@@ -79,7 +79,7 @@ def create_index(indexdir):
                     del d['part']
                 print(chapter_id)
 
-                sessions = book['session_id_re'].split(chapter)
+                sessions = book['session_re'].split(chapter)
                 continues_session = None
                 if chapter_id != 'Appendix':
                     continues_session = bool(re.search(r'[a-z]', sessions[0])) and last_session_id
