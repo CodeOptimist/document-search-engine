@@ -7,17 +7,19 @@ from whoosh import index, analysis
 
 def clean(_text):
     text = _text.replace('\(', '(').replace('\)', ')')
-    text = re.sub('[\n\*\#]+', '', text).strip()
+    text = re.sub('[\*\#]+', '', text)
+    text = re.sub(r'[ \xa0\n]+', r' ', text)
+    text = text.strip()
 
     # text = re.sub(r'[\*\#>]+', '', text).strip()
-    # text = re.sub(r'[ \xa0\n]+', r' ', text).title()
-    # text = re.sub(r'\bEsp\b', r'ESP', text)
     return text
 
 
-def title(text):
+def title(_text):
+    text = _text
     if not re.search(r'[a-z]', text):
-        return text.title()
+        text = text.title()
+        text = re.sub(r'\bEsp\b', r'ESP', text)
     return text
 
 
@@ -62,13 +64,12 @@ def create_index(indexdir):
 
             get_tiers(book, tiers, header)
 
-            has_no_content = not re.search(r'[a-z]', _content)
-            if has_no_content:
+            has_content = re.search(r'[a-z]', _content)
+            if not has_content:
                 carry_over_header = content
                 continue
 
             add_document(writer, d, tiers, content)
-
 
     writer.commit()
     return ix
@@ -85,16 +86,15 @@ def get_tiers(book, tiers, header):
             tiers[tier_idx] = (title(short), title(long))
 
         if tier_end and tier_end.search(header):
-            for lower_tier_idx in range(tier_idx + 1, 3):
-                tiers[lower_tier_idx] = ('', '')
+            tiers[tier_idx] = ('', '')
 
 
 def add_document(writer, d, tiers, content):
     d['id'] = tiers[2][0]
-    d['title'] = ' '.join([tiers[i][j] for i in range(3) for j in range(2) if (i, j) != (2, 0)]).strip()
+    d['title'] = ' '.join([tiers[i][j] for i in range(3) for j in range(2) if (i, j) != (2, 0) and tiers[i][j]])
     d['content'] = content
-    d['short'] = ' '.join([tiers[i][0] for i in range(3)]).strip()
-    d['long'] = ''.join(["- {}<br />".format(tiers[i][1].strip()) for i in range(3) if tiers[i][1]])
-    print(d['title'], d['id'])
+    d['short'] = ' '.join([tiers[i][0] for i in range(3) if tiers[i][0]])
+    d['long'] = ''.join(["- {}<br />".format(tiers[i][1]) for i in range(3) if tiers[i][1]])
+    print(d['book_abbr'], d['title'], d['id'])
     writer.add_document(**d)
 
