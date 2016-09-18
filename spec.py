@@ -40,6 +40,8 @@ def create_index(indexdir):
     for book in Books.indexed:
         with open("books/{}.txt".format(book['abbr']), encoding='utf-8') as f:
             text = f.read()
+            if book['abbr'] == 'DEaVF2':
+                text = text.replace('\nTHE** H**ANDICAPPED**.\n\n\n\n\n', '\nTHE** H**ANDICAPPED**.\n\n\n\n## **SESSION 906, MARCH 6, 1980  \n8:52 P.M. THURSDAY**\n')
 
         d = {
             'book_name': book['name'],
