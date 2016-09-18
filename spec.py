@@ -7,7 +7,7 @@ from whoosh import index, analysis
 
 def clean(_text):
     text = _text.replace('\(', '(').replace('\)', ')')
-    text = re.sub('[\*\#]+', '', text)
+    text = re.sub('[\*\#>]+', '', text)
     text = re.sub(r'[ \xa0\n]+', r' ', text)
     text = text.strip()
 
@@ -63,8 +63,8 @@ def create_index(indexdir):
                     header = pattern.sub(repl, header, 1)
 
             get_tiers(book, tiers, header)
-
             has_content = re.search(r'[a-z]', _content)
+
             if not has_content:
                 carry_over_header = content
                 continue
@@ -76,16 +76,17 @@ def create_index(indexdir):
 
 
 def get_tiers(book, tiers, header):
+    short_header = header.split('\n')[0]
     for tier_idx in range(3):
         tier_start, tier_end = book['tier{}'.format(tier_idx)]
-        if tier_start and tier_start.search(header):
+        if tier_start and tier_start.search(short_header):
             if '\n' in header:
                 short, long = header.split('\n')
             else:
                 short, long = header, ''
             tiers[tier_idx] = (title(short), title(long))
 
-        if tier_end and tier_end.search(header):
+        if tier_end and tier_end.search(short_header):
             tiers[tier_idx] = ('', '')
 
 
