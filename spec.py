@@ -94,7 +94,9 @@ def add_document(writer, d, tiers, content):
     d['id'] = tiers[2][0]
     d['title'] = ' '.join([tiers[i][j] for i in range(3) for j in range(2) if (i, j) != (2, 0) and tiers[i][j]])
     d['content'] = content
-    d['short'] = ' '.join([tiers[i][0] for i in range(1, 3) if tiers[i][0]])
+
+    start = 1 if tiers[1][0] else 0
+    d['short'] = ': '.join([tiers[i][0] for i in range(start, 3) if tiers[i][0]])
     d['long'] = ''.join(["- {}<br />".format(tiers[i][1]) for i in range(3) if tiers[i][1]])
     print(d['book_abbr'], d['title'], d['id'])
     writer.add_document(**d)
