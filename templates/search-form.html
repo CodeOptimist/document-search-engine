@@ -38,12 +38,12 @@
 </ul>
 <p>Leave out the search words for a session list:</p>
 <ul class="examples">
-    <li><a href="#" onclick="example(this)">chapter:22</a></li>
-    <li><a href="#" onclick="example(this)">chapter:dreams</a></li>
-    <li><a href="#" onclick="example(this)">chapter:(preface OR appendix)</a></li>
+    <li><a href="#" onclick="example(this)">heading:22</a></li>
+    <li><a href="#" onclick="example(this)">heading:dreams</a></li>
+    <li><a href="#" onclick="example(this)">heading:(preface OR appendix)</a></li>
     <li><a href="#" onclick="example(this)">session:636</a></li>
     <li><a href="#" onclick="example(this)">session:(January 1977)</a></li>
-    <li><a href="#" onclick="example(this)">book:tma chapter:*teen</a></li>
+    <li><a href="#" onclick="example(this)">book:tma heading:*teen</a></li>
 </ul>
 </div>
 <p id="books">Books: {{ books|map(attribute='abbr')|map('link_abbr')|join(', ')|safe }}</p>

@@ -30,8 +30,8 @@ def create_index(indexdir):
                     short=STORED(),
                     long=STORED(),
                     book=ID(stored=True),
-                    title=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
-                    id=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
+                    heading=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
+                    session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
                     content=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
 
     ix = index.create_in(indexdir, schema)
@@ -93,12 +93,12 @@ def get_tiers(book, tiers, header):
 
 
 def add_document(writer, d, tiers, content):
-    d['id'] = tiers[2][0]
-    d['title'] = ' '.join([tiers[i][j] for i in range(3) for j in range(2) if (i, j) != (2, 0) and tiers[i][j]])
+    d['session'] = tiers[2][0]
+    d['heading'] = ' '.join([tiers[i][j] for i in range(3) for j in range(2) if (i, j) != (2, 0) and tiers[i][j]])
     d['content'] = content
 
     start = 1 if tiers[1][0] else 0
     d['short'] = ': '.join([tiers[i][0] for i in range(start, 3) if tiers[i][0]])
     d['long'] = ''.join(["- {}<br />".format(tiers[i][1]) for i in range(3) if tiers[i][1]])
-    print(d['book_abbr'], d['title'], d['id'])
+    print(d['book_abbr'], d['heading'], d['session'])
     writer.add_document(**d)
