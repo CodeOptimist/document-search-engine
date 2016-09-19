@@ -34,19 +34,19 @@
     <li><a href="#" onclick="example(this)">"mind matter"~2</a></li>
     <li><a href="#" onclick="example(this)">book:nopr exercise</a></li>
     <li><a href="#" onclick="example(this)">NOT book:wth exercise</a></li>
+    <li><a href="#" onclick="example(this)">heading:(essay 4) mind</a></li>
     <li><a href="#" onclick="example(this)">"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)</a></li>
 </ul>
-<p>Leave out the search words for a session list:</p>
+<p>Leave out the search words for a simple list:</p>
 <ul class="examples">
-    <li><a href="#" onclick="example(this)">heading:22</a></li>
     <li><a href="#" onclick="example(this)">heading:dreams</a></li>
-    <li><a href="#" onclick="example(this)">heading:(preface OR appendix)</a></li>
+    <li><a href="#" onclick="example(this)">heading:(chapter 16)</a></li>
     <li><a href="#" onclick="example(this)">session:636</a></li>
     <li><a href="#" onclick="example(this)">session:(January 1977)</a></li>
     <li><a href="#" onclick="example(this)">book:tma heading:*teen</a></li>
 </ul>
 </div>
-<p id="books">Books: {{ books|map(attribute='abbr')|map('link_abbr')|join(', ')|safe }}</p>
+<p id="books">Current books: {{ books|map(attribute='abbr')|map('link_abbr')|join(', ')|safe }}</p>
 <form id="search-form" action="." method="post">
     <input type="text" id="query" name="query" title="query" value="{{ query }}" style="width: 30em;">
     <input type="submit" name="search" value="Search">
