@@ -55,9 +55,6 @@ class ConsistentFragmentScorer(BasicFragmentScorer):
     def __call__(self, f):
         score = super(ConsistentFragmentScorer, self).__call__(f)
 
-        # random.seed(f.__repr__())
-        # score += random.random()
-
         if f.startchar:
             score += 1 / f.startchar
         return score

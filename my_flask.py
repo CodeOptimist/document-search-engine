@@ -4,6 +4,7 @@ from whoosh.highlight import BasicFragmentScorer
 from whoosh.qparser import QueryParser
 from CommonMark import commonmark
 from whoosh.query.qcore import _NullQuery
+import argparse
 
 from my_whoosh import ParagraphFragmenter, TokenPosFormatter, ConsistentFragmentScorer
 from books import Books
@@ -94,6 +95,13 @@ def get_matching_paragraph_idxs(results, hit):
     return matching_paragraph_idxs
 
 
+def kt(q, numterms=10):
+    s = ix.searcher()
+    qp = QueryParser('content', ix.schema).parse(q)
+    kt = s.search(qp).key_terms('content', numterms=numterms)
+    return [term for (term, score) in kt]
+
+
 os.chdir(sys.path[0])
 indexdir = 'indexdir'
 
@@ -111,4 +119,11 @@ else:
         ix = my_index.create_index(indexdir)
 
 if __name__ == '__main__':
-    app.run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--interactive", help="load search index interactively", action="store_true")
+    args = parser.parse_args()
+
+    if args.interactive:
+        s = ix.searcher()
+    else:
+        app.run()

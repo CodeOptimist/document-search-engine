@@ -32,6 +32,7 @@ def create_index(indexdir):
                     book=ID(stored=True),
                     heading=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
+                    # content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer()))
                     content=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
 
     ix = index.create_in(indexdir, schema)
