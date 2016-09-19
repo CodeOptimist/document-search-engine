@@ -7,7 +7,7 @@ from whoosh.query.qcore import _NullQuery
 
 from my_whoosh import ParagraphFragmenter, TokenPosFormatter, ConsistentFragmentScorer
 from books import Books
-import spec
+import my_index
 
 from flask import Flask, request, render_template
 from flask_limiter import Limiter
@@ -100,15 +100,15 @@ indexdir = 'indexdir'
 if not os.path.isdir(indexdir):
     os.mkdir(indexdir)
 
-# rebuild = True
-rebuild = False
+rebuild = True
+# rebuild = False
 if rebuild:
-    ix = spec.create_index(indexdir)
+    ix = my_index.create_index(indexdir)
 else:
     try:
         ix = index.open_dir(indexdir)
     except index.EmptyIndexError:
-        ix = spec.create_index(indexdir)
+        ix = my_index.create_index(indexdir)
 
 if __name__ == '__main__':
     app.run()

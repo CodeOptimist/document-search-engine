@@ -80,15 +80,15 @@ def create_index(indexdir):
 def get_tiers(book, tiers, header):
     short_header = header.split('\n')[0]
     for tier_idx in range(3):
-        tier_start, tier_end = book['tier{}'.format(tier_idx)]
-        if tier_start and tier_start.search(short_header):
+        tier = book['tier{}'.format(tier_idx)]
+        if tier['begin'] and re.search(tier['begin'], short_header, flags=re.IGNORECASE):
             if '\n' in header:
                 short, long = header.split('\n')
             else:
                 short, long = header, ''
             tiers[tier_idx] = (title(short), title(long))
 
-        if tier_end and tier_end.search(short_header):
+        if tier['end'] and re.search(tier['end'], short_header, flags=re.IGNORECASE):
             tiers[tier_idx] = ('', '')
 
 
@@ -102,4 +102,3 @@ def add_document(writer, d, tiers, content):
     d['long'] = ''.join(["- {}<br />".format(tiers[i][1]) for i in range(3) if tiers[i][1]])
     print(d['book_abbr'], d['title'], d['id'])
     writer.add_document(**d)
-
