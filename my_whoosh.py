@@ -8,23 +8,20 @@ class ParagraphFragmenter(Fragmenter):
 
     def fragment_tokens(self, text, tokens):
         paragraph_tokens = []
-        last_s = None
-        last_e = None
+        last = (None, None)
 
         for t in tokens:
             if t.matched:
-                s, e = self.get_paragraph_pos(text, t)
+                cur = self.get_paragraph_pos(text, t)
         #
-                if paragraph_tokens and s != last_s:
-                    yield Fragment(text, paragraph_tokens, last_s, last_e)
+                if cur != last and paragraph_tokens:
+                    yield Fragment(text, paragraph_tokens, last[0], last[1])
                     paragraph_tokens = []
-                else:
-                    paragraph_tokens.append(t.copy())
-                last_s = s
-                last_e = e
+                paragraph_tokens.append(t.copy())
+                last = cur
 
         if paragraph_tokens:
-            yield Fragment(text, paragraph_tokens, last_s, last_e)
+            yield Fragment(text, paragraph_tokens, last[0], last[1])
 
     def get_paragraph_pos(self, text, t):
         try:
@@ -55,6 +52,7 @@ class ConsistentFragmentScorer(BasicFragmentScorer):
     def __call__(self, f):
         score = super(ConsistentFragmentScorer, self).__call__(f)
 
+        # line = f.text[f.startchar:f.endchar]
         if f.startchar:
             score += 1 / f.startchar
         return score
