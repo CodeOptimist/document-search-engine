@@ -19,14 +19,14 @@
         }
     </script>
     <style>
-        .examples a, #books a {text-decoration: none;}
+        h1 a, .examples a, #books a {text-decoration: none;}
+        h1 a {color: inherit;}
     </style>
 </head>
 <body style="width: 65em; font-family: Verdana, sans-serif; font-size: 0.9em;">
-<h1>Seth corpus search</h1>
+<h1><a href="http://search.sethtalks.com">Seth corpus search</a></h1>
 <p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
-<p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
-<div><p>Examples:</p>
+<div><p>Example searches:</p>
 <ul class="examples">
     <li><a href="#" onclick="example(this)">beer OR wine</a></li>
     <li><a href="#" onclick="example(this)">cat mouse</a></li>
@@ -46,15 +46,15 @@
     <li><a href="#" onclick="example(this)">book:tma heading:*teen</a></li>
 </ul>
 </div>
+<p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
 <p id="books">Current books: {{ books|map(attribute='abbr')|map('link_abbr')|join(', ')|safe }}</p>
 <form id="search-form" action="." method="post">
     <input type="text" id="query" name="query" title="query" value="{{ query }}" style="width: 30em;">
     <input type="submit" name="search" value="Search">
 </form>
-<p>
-{#    Result limits: {{ session_limit }} sessions, {{ paragraph_limit }} paragraphs<br />#}
-    Book content copyright © Laurel Davies-Butts
-</p>
+<p>The entire Seth collection, including audio, early and personal sessions, can be ordered from <a href="https://sethcenter.com/collections/books">sethcenter.com</a>.<br />
+There are <a href="https://www.amazon.com/Jane%20Roberts/e/B000APH242/?rh=n%3A283155%2Cp_82%3AB000APH242%2Cp_n_feature_browse-bin%3A618073011">digital copies</a> in the Amazon kindle store.</p>
+<p>Book content copyright © Laurel Davies-Butts</p>
 {% autoescape false %}
 {{ result }}
 {% endautoescape %}
