@@ -35,19 +35,6 @@ class ParagraphFragmenter(Fragmenter):
         return paragraph_start, paragraph_end
 
 
-class TokenPosFormatter(Formatter):
-    def __init__(self):
-        self.between = '\n'
-
-    def _text(self, text):
-        return ""
-
-    def format_token(self, text, token, replace=False):
-        if token.matched:
-            return str(token.startchar) + " "
-        return ""
-
-
 class ConsistentFragmentScorer(BasicFragmentScorer):
     def __call__(self, f):
         score = super(ConsistentFragmentScorer, self).__call__(f)

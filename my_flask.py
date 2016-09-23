@@ -6,7 +6,7 @@ from CommonMark import commonmark
 from whoosh.query.qcore import _NullQuery
 import argparse
 
-from my_whoosh import ParagraphFragmenter, TokenPosFormatter, ConsistentFragmentScorer
+from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer
 from books import Books
 import my_index
 
@@ -49,50 +49,27 @@ def search_form_post():
         else:
             results = searcher.search(query, limit=150)
 
+        results.fragmenter = ParagraphFragmenter()
+        results.order = highlight.SCORE
+        results.scorer = ConsistentFragmentScorer()
+        results.formatter = highlight.HtmlFormatter(between='')
+
         output = ["## Results for {}".format(query)]
         for hit in results:
-            results.fragmenter = ParagraphFragmenter()
-            results.order = highlight.SCORE
-            results.scorer = ConsistentFragmentScorer()
-            results.formatter = TokenPosFormatter()
-            paragraph_idxs = get_matching_paragraph_idxs(results, hit)
-            # print(paragraph_idxs)
-
-            results.fragmenter = highlight.WholeFragmenter(charlimit=None)
-            results.scorer = BasicFragmentScorer()
-            results.formatter = highlight.HtmlFormatter()
-            highlights = hit.highlights('content', top=paragraph_limit)
-            if not highlights:
-                highlights = hit['content']
-            highlights = highlights.split('\n')
-
+            highlights = hit.highlights('content', top=paragraph_limit).split('\n')
             output.append("""
 <details>
 <span style="font-size: 0.9em">- {0[book_name]}<br />{0[long]}</span>
 <summary>{0[book_abbr]} {0[short]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
 </details>
 """.format(hit))
-            for idx in paragraph_idxs:
-                matching_paragraph = highlights[idx]
-                output.append("* {}".format(matching_paragraph))
+            for h in filter(None, highlights):
+                output.append("* {}".format(h))
             output.append('<br />')
 
         output_str = '\n\n'.join(output)
         result = commonmark(output_str)
         return render_template("search-form.html", books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
-
-
-def get_matching_paragraph_idxs(results, hit):
-    matching_paragraph_idxs = []
-    fragments_tokens_pos = hit.highlights('content', top=paragraph_limit).split('\n')
-    fragments_tokens_pos = filter(None, fragments_tokens_pos)
-
-    for fragment_tokens_pos in fragments_tokens_pos:
-        fragment_pos = int(fragment_tokens_pos.split()[0])
-        paragraph_idx = hit['content'][:fragment_pos].count('\n')
-        if paragraph_idx not in matching_paragraph_idxs:
-            matching_paragraph_idxs.append(paragraph_idx)
-    return matching_paragraph_idxs
 
 
 def kt(q, numterms=10):
