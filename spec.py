@@ -6,44 +6,30 @@ from whoosh import index, analysis
 
 
 def clean(_text):
-    text = _text.replace(r'\(', '').replace(r'\)', '')
-    text = re.sub(r'[\*\#>]+', '', text).strip()
-    text = re.sub(r'[ \xa0\n]+', r' ', text).title()
-    text = re.sub(r'\bEsp\b', r'ESP', text)
+    text = _text.replace('\(', '(').replace('\)', ')')
+    text = re.sub('[\n\*\#]+', '', text).strip()
+
+    # text = re.sub(r'[\*\#>]+', '', text).strip()
+    # text = re.sub(r'[ \xa0\n]+', r' ', text).title()
+    # text = re.sub(r'\bEsp\b', r'ESP', text)
     return text
 
 
-def add_document(writer, d, session, content):
-    d['session'] = session
-    d['content'] = content
-    d['part_title'] = ""
-
-    if 'part' in d:
-        title = re.sub(r'^Part \w+\s*', r'', d['part'])
-        if title:
-            d['part_title'] = "- {}<br />".format(title)
-
-    d['chapter_num'] = re.sub(r'^(Chapter \d+|Section \d+|Session \w+).*', r'\1', d['chapter'])
-    d['chapter_title'] = ""
-    if d['chapter_num'] != d['chapter']:
-        chapter_title = d['chapter'].replace(d['chapter_num'], '', 1).strip()
-        if chapter_title:
-            d['chapter_title'] = "- {}<br />".format(chapter_title)
-
-    writer.add_document(**d)
+def title(text):
+    if not re.search(r'[a-z]', text):
+        return text.title()
+    return text
 
 
 def create_index(indexdir):
     schema = Schema(book_abbr=STORED(),
                     book_name=STORED(),
                     book_url=STORED(),
-                    part_title=STORED(),
-                    chapter_num=STORED(),
-                    chapter_title=STORED(),
+                    short=STORED(),
+                    long=STORED(),
                     book=ID(stored=True),
-                    part=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
-                    chapter=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
-                    session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
+                    title=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
+                    id=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
                     content=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
 
     ix = index.create_in(indexdir, schema)
@@ -60,43 +46,55 @@ def create_index(indexdir):
             'book': book['abbr'].lower(),
         }
 
-        last_session_id = None
-        parts = book['part_re'].split(text)[:-1]
-        for _part_id, _part in zip(parts[::2], parts[1::2]):
-            part = _part_id + _part
-            part_id = clean(_part_id)
-            if not book['section_re'].match(_part_id):
-                d['part'] = part_id
-                print(part_id)
+        tiers = [('', '')] * 3
+        carry_over_header = None
+        headers = list(filter(None, book['headers_re'].split(text)[1:-2]))
+        for (_header, _content) in zip(headers[::2], headers[1::2]):
+            content = _header + _content
+            if carry_over_header:
+                content = carry_over_header + content
+                carry_over_header = None
 
-            chapters = list(filter(None, book['section_re'].split(part)[1:-1]))
-            for _chapter_id, _chapter in zip(chapters[::2], chapters[1::2]):
-                chapter = _chapter_id + _chapter
-                chapter_id = clean(_chapter_id)
-                d['chapter'] = chapter_id
-                print(chapter_id)
+            header = clean(_header)
+            if 'header_replaces' in book:
+                for (pattern, repl) in book['header_replaces']:
+                    header = pattern.sub(repl, header, 1)
 
-                sessions = list(filter(None, book['session_re'].split(chapter)[:-1]))
-                if not sessions:
-                    add_document(writer, d, "", chapter)
-                    continue
+            get_tiers(book, tiers, header)
 
-                continues_session = bool(re.search(r'[a-z]', sessions[0])) and last_session_id
-                if continues_session:
-                    add_document(writer, d, last_session_id, sessions[0])
+            has_no_content = not re.search(r'[a-z]', _content)
+            if has_no_content:
+                carry_over_header = content
+                continue
 
-                for idx, (_session_id, _session) in enumerate(zip(sessions[1::2], sessions[2::2])):
-                    session = _session_id + _session
-                    if idx == 0 and continues_session == False:
-                        session = sessions[0] + session
-
-                    session_id = clean(_session_id)
-                    if session:
-                        add_document(writer, d, session_id, session)
-                    last_session_id = session_id
-                    print(session_id)
+            add_document(writer, d, tiers, content)
 
 
     writer.commit()
     return ix
+
+
+def get_tiers(book, tiers, header):
+    for tier_idx in range(3):
+        tier_start, tier_end = book['tier{}'.format(tier_idx)]
+        if tier_start and tier_start.search(header):
+            if '\n' in header:
+                short, long = header.split('\n')
+            else:
+                short, long = header, ''
+            tiers[tier_idx] = (title(short), title(long))
+
+        if tier_end and tier_end.search(header):
+            for lower_tier_idx in range(tier_idx + 1, 3):
+                tiers[lower_tier_idx] = ('', '')
+
+
+def add_document(writer, d, tiers, content):
+    d['id'] = tiers[2][0]
+    d['title'] = ' '.join([tiers[i][j] for i in range(3) for j in range(2) if (i, j) != (2, 0)]).strip()
+    d['content'] = content
+    d['short'] = ' '.join([tiers[i][0] for i in range(3)]).strip()
+    d['long'] = ''.join(["- {}<br />".format(tiers[i][1].strip()) for i in range(3) if tiers[i][1]])
+    print(d['title'], d['id'])
+    writer.add_document(**d)
 

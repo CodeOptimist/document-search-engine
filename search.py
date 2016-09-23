@@ -67,8 +67,8 @@ def search_form_post():
 
             output.append("""
 <details>
-<span style="font-size: 0.9em">- {0[book_name]}<br />{0[part_title]}{0[chapter_title]}</span>
-<summary>{0[book_abbr]} {0[chapter_num]} {0[session]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
+<span style="font-size: 0.9em">- {0[book_name]}<br />{0[long]}</span>
+<summary>{0[book_abbr]} {0[short]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
 </details>
 """.format(hit))
             for idx in paragraph_idxs:
