@@ -5,6 +5,7 @@ from whoosh.qparser import QueryParser
 from CommonMark import commonmark
 from whoosh.query.qcore import _NullQuery
 import argparse
+from bs4 import BeautifulSoup
 
 from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer
 from books import Books
@@ -20,7 +21,7 @@ limiter = Limiter(
     key_func=get_remote_address,
     global_limits=["15 per minute", "100 per hour", "1000 per day"]
 )
-session_limit = 5
+session_limit = 7
 paragraph_limit = 3
 
 
@@ -54,21 +55,44 @@ def search_form_post():
         results.scorer = ConsistentFragmentScorer()
         results.formatter = highlight.HtmlFormatter(between='')
 
-        output = ["## Results for {}".format(query)]
-        for hit in results:
-            highlights = hit.highlights('content', top=paragraph_limit).split('\n')
-            output.append("""
-<details>
+        output = ["<h2>Results for {}</h2>".format(query)]
+
+        for h_idx, hit in enumerate(results):
+            highlights = hit.highlights('content', top=paragraph_limit)
+            highlights = commonmark(highlights)[len("<p>"):-len("</p>") - 1]
+
+            output.append("""<details>
 <span style="font-size: 0.9em">- {0[book_name]}<br />{0[long]}</span>
 <summary>{0[book_abbr]} {0[short]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
-</details>
-""".format(hit))
-            for h in filter(None, highlights):
-                output.append("* {}".format(h))
-            output.append('<br />')
+</details>""".format(hit))
 
-        output_str = '\n\n'.join(output)
-        result = commonmark(output_str)
+            if not highlights:
+                continue
+
+            output.append("<ul>")
+
+            for p_idx, paragraph in enumerate(highlights.split('\n')):
+                if h_idx == 0:
+                    output.append("<li><p>{}</p></li>".format(paragraph))
+                else:
+                    sentences = []
+                    sentence_split = filter(None, re.split(r'(.*?[\.\?!][\s$])', paragraph))
+                    last_match_idx = None
+                    for s_idx, sentence in enumerate(sentence_split):
+                        if 'class="match ' in sentence:
+                            if s_idx - 1 == last_match_idx:
+                                sentences[-1] += sentence
+                            else:
+                                sentences.append(sentence)
+                            last_match_idx = s_idx
+                    output.append("<li><p>{}</p></li>".format(' <span class="omission">[...]</span> '.join(sentences)))
+
+            output.append("</ul><br />")
+        # close any <em> tags and such from the sentence fragments
+        result = '\n'.join(output)
+        soup = BeautifulSoup(result)
+        result = str(soup.body)[6:-7]
+
         return render_template("search-form.html", books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
 
 
