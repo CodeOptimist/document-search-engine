@@ -1,6 +1,5 @@
 import os, sys, re
 from whoosh import highlight, index
-from whoosh.highlight import BasicFragmentScorer
 from whoosh.qparser import QueryParser
 from CommonMark import commonmark
 from whoosh.query.qcore import _NullQuery
@@ -59,7 +58,6 @@ def search_form_post():
 
         for h_idx, hit in enumerate(results):
             highlights = hit.highlights('content', top=paragraph_limit)
-            highlights = commonmark(highlights)[len("<p>"):-len("</p>") - 1]
 
             output.append("""<details>
 <span style="font-size: 0.9em">- {0[book_name]}<br />{0[long]}</span>
@@ -67,11 +65,13 @@ def search_form_post():
 </details>""".format(hit))
 
             if not highlights:
+                output.append("<br />")
                 continue
 
             output.append("<ul>")
 
-            for p_idx, paragraph in enumerate(highlights.split('\n')):
+            for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
+                paragraph = commonmark(cm_paragraph)
                 if h_idx == 0:
                     output.append("<li><p>{}</p></li>".format(paragraph))
                 else:
@@ -80,6 +80,8 @@ def search_form_post():
                     last_match_idx = None
                     for s_idx, sentence in enumerate(sentence_split):
                         if 'class="match ' in sentence:
+                            sentence = str(BeautifulSoup(sentence, "lxml").body)[6:-7]
+                            sentence = re.sub(r'(^<p>|</p>$)', r'', sentence)
                             if s_idx - 1 == last_match_idx:
                                 sentences[-1] += sentence
                             else:
@@ -88,10 +90,7 @@ def search_form_post():
                     output.append("<li><p>{}</p></li>".format(' <span class="omission">[...]</span> '.join(sentences)))
 
             output.append("</ul><br />")
-        # close any <em> tags and such from the sentence fragments
         result = '\n'.join(output)
-        soup = BeautifulSoup(result)
-        result = str(soup.body)[6:-7]
 
         return render_template("search-form.html", books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
 
