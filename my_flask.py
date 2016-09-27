@@ -73,10 +73,11 @@ def search_form_post():
             for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
                 paragraph = commonmark(cm_paragraph)
                 if h_idx == 0:
-                    output.append("<li><p>{}</p></li>".format(paragraph))
+                    excerpt = paragraph
                 else:
                     sentences = get_sentence_fragments(paragraph)
-                    output.append("<li><p>{}</p></li>".format(' <span class="omission">[...]</span> '.join(sentences)))
+                    excerpt = ' <span class="omission">[...]</span> '.join(sentences)
+                output.append("<li><p>{}</p></li>".format(excerpt))
 
             output.append("</ul><br />")
         result = '\n'.join(output)
@@ -88,7 +89,7 @@ def get_sentence_fragments(paragraph):
     bs_paragraph = BeautifulSoup(paragraph, "lxml")
 
     fragments = []
-    sentence_split = filter(None, re.split(r'(.*?[\.\?!][\s$])', paragraph))
+    sentence_split = filter(None, re.split(r'(.*?(\.”|[\.\?!])[\s$])', paragraph))
     last_match_idx = None
     for s_idx, sentence in enumerate(sentence_split):
         sentence = sentence.strip('\n')
