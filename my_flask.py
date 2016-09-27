@@ -75,24 +75,52 @@ def search_form_post():
                 if h_idx == 0:
                     output.append("<li><p>{}</p></li>".format(paragraph))
                 else:
-                    sentences = []
-                    sentence_split = filter(None, re.split(r'(.*?[\.\?!][\s$])', paragraph))
-                    last_match_idx = None
-                    for s_idx, sentence in enumerate(sentence_split):
-                        if 'class="match ' in sentence:
-                            sentence = str(BeautifulSoup(sentence, "lxml").body)[6:-7]
-                            sentence = re.sub(r'(^<p>|</p>$)', r'', sentence)
-                            if s_idx - 1 == last_match_idx:
-                                sentences[-1] += sentence
-                            else:
-                                sentences.append(sentence)
-                            last_match_idx = s_idx
+                    sentences = get_sentence_fragments(paragraph)
                     output.append("<li><p>{}</p></li>".format(' <span class="omission">[...]</span> '.join(sentences)))
 
             output.append("</ul><br />")
         result = '\n'.join(output)
 
         return render_template("search-form.html", books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
+
+
+def get_sentence_fragments(paragraph):
+    bs_paragraph = BeautifulSoup(paragraph, "lxml")
+
+    fragments = []
+    sentence_split = filter(None, re.split(r'(.*?[\.\?!][\s$])', paragraph))
+    last_match_idx = None
+    for s_idx, sentence in enumerate(sentence_split):
+        sentence = sentence.strip('\n')
+
+        if 'class="match ' in sentence:
+            sentence_in_paragraph_tag = get_deepest_match(bs_paragraph, sentence)
+            term_in_sentence_tag = get_deepest_match(sentence_in_paragraph_tag, 'class="match ')
+            is_italics = any(tag.name == 'em' for tag in term_in_sentence_tag.parents)
+
+            sentence_bs = BeautifulSoup(sentence, "lxml")
+            fragment = str(sentence_bs.body)
+            fragment = re.sub(r'^<body>|</body>$', r'', fragment)
+            fragment = re.sub(r'^<p>|</p>$', r'', fragment)
+
+            if is_italics and not fragment.startswith('<em>'):
+                fragment = "<em>{}</em>".format(fragment)
+
+            if s_idx - 1 == last_match_idx:
+                fragments[-1] += fragment
+            else:
+                fragments.append(fragment)
+            last_match_idx = s_idx
+    return fragments
+
+
+def get_deepest_match(bs, html):
+    result = None
+    for tag in bs.find_all(True):
+        if html in str(tag):
+            result = tag
+    assert result
+    return result
 
 
 def kt(q, numterms=10):
@@ -108,8 +136,8 @@ indexdir = 'indexdir'
 if not os.path.isdir(indexdir):
     os.mkdir(indexdir)
 
-rebuild = True
-# rebuild = False
+# rebuild = True
+rebuild = False
 if rebuild:
     ix = my_index.create_index(indexdir)
 else:
