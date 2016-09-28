@@ -1,4 +1,8 @@
 import os, sys, re
+import urllib.parse
+
+from flask import redirect
+from flask import url_for
 from whoosh import highlight, index
 from whoosh.qparser import QueryParser
 from CommonMark import commonmark
@@ -26,18 +30,36 @@ paragraph_limit = 3
 
 @app.template_filter('link_abbr')
 def link_abbr(abbr):
-    return """<a href="#" onclick="filterBook('{0}')">{0}</a>""".format(abbr)
+    return """<a href="javascript:void()" onclick="filterBook('{0}')">{0}</a>""".format(abbr)
 
 
-@app.route('/')
-def search_form():
-    return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
+@app.template_filter('example')
+def example_link(s):
+    return '<a href="/q/{}/">{}</a>'.format(pretty_url(s), s)
 
 
-@app.route('/', methods=['POST'])
-def search_form_post():
-    input = request.form['query']
+def pretty_url(s, undo=False):
+    if undo:
+        s = urllib.parse.unquote_plus(s)
+    else:
+        # valid path component chars are: '()*: http://stackoverflow.com/a/2375597/879
+        # but browsers seem okay with []{} also
+        s = urllib.parse.quote_plus(s, safe='[]{}\'()*:')
+    return s
 
+
+@app.route('/', methods=['GET', 'POST'])
+@app.route('/q/', methods=['GET', 'POST'])
+@app.route('/q/<input>/', methods=['GET', 'POST'])
+def search_form(input=None):
+    if request.method == 'POST':
+        input = pretty_url(request.form['query'].strip())
+        if input:
+            return redirect(url_for('search_form', input=input))
+    if not input:
+        return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
+
+    input = pretty_url(input, undo=True)
     with ix.searcher() as searcher:
         input = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), input)
         query = QueryParser('content', ix.schema).parse(input)
@@ -72,6 +94,7 @@ def search_form_post():
 
             for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
                 paragraph = commonmark(cm_paragraph)
+                # if True:
                 if h_idx == 0:
                     excerpt = paragraph
                 else:

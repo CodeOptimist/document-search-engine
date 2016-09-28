@@ -13,11 +13,6 @@
             }
             document.getElementById('query').value = new_q;
         }
-
-        function example(a) {
-            document.getElementById('query').value = a.innerText;
-            document.getElementById('search-form').submit()
-        }
     </script>
     <style>
         h1 a, .examples a, #books a {text-decoration: none;}
@@ -30,22 +25,22 @@
 <p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
 <div><p>Example searches:</p>
 <ul class="examples">
-    <li><a href="#" onclick="example(this)">beer OR wine</a></li>
-    <li><a href="#" onclick="example(this)">cat mouse</a></li>
-    <li><a href="#" onclick="example(this)">"conscious mind"</a></li>
-    <li><a href="#" onclick="example(this)">"mind matter"~2</a></li>
-    <li><a href="#" onclick="example(this)">book:nopr exercise</a></li>
-    <li><a href="#" onclick="example(this)">NOT book:wth exercise</a></li>
-    <li><a href="#" onclick="example(this)">heading:(essay 4) mind</a></li>
-    <li><a href="#" onclick="example(this)">"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)</a></li>
+    <li>{{ 'beer OR wine'|example|safe }}</li>
+    <li>{{ 'cat mouse'|example|safe }}</li>
+    <li>{{ '"conscious mind"'|example|safe }}</li>
+    <li>{{ '"mind matter"~2'|example|safe }}</li>
+    <li>{{ 'book:nopr exercise'|example|safe }}</li>
+    <li>{{ 'NOT book:wth exercise'|example|safe }}</li>
+    <li>{{ 'heading:(essay 4) mind'|example|safe }}</li>
+    <li>{{ '"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)'|example|safe }}</li>
 </ul>
 <p>Leave out the search words for a simple list:</p>
 <ul class="examples">
-    <li><a href="#" onclick="example(this)">heading:dreams</a></li>
-    <li><a href="#" onclick="example(this)">heading:(chapter 16)</a></li>
-    <li><a href="#" onclick="example(this)">session:636</a></li>
-    <li><a href="#" onclick="example(this)">session:(January 1977)</a></li>
-    <li><a href="#" onclick="example(this)">book:tma heading:*teen</a></li>
+    <li>{{ 'heading:dreams'|example|safe }}</li>
+    <li>{{ 'heading:(chapter 16)'|example|safe }}</li>
+    <li>{{ 'session:636'|example|safe }}</li>
+    <li>{{ 'session:(January 1977)'|example|safe }}</li>
+    <li>{{ 'book:tma heading:*teen'|example|safe }}</li>
 </ul>
 </div>
 <p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
