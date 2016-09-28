@@ -76,7 +76,12 @@ def search_form(input=None):
         results.scorer = ConsistentFragmentScorer()
         results.formatter = highlight.HtmlFormatter(between='')
 
-        output = ["<h2>Results for {}</h2>".format(query)]
+        result_len = len(results)
+        if result_len <= session_limit:
+            output = ["<h2>{} results for {}</h2>".format(result_len, query)]
+        else:
+            output = ["<h2>Top {} of {} results for {}</h2>".format(min(session_limit, result_len), result_len, query)]
+
 
         for h_idx, hit in enumerate(results):
             highlights = hit.highlights('content', top=paragraph_limit)

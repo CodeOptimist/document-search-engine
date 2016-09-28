@@ -5,11 +5,21 @@
 	<title>Seth corpus search</title>
     <script>
         function filterBook(abbr) {
+            abbr_l = abbr.toLowerCase();
             q = document.getElementById('query').value;
-            if (/\bbook:/i.test(q)) {
-                new_q = q.replace(/\bbook:\w+/i, "book:" + abbr.toLowerCase());
+
+            not_book_re = new RegExp("\\bNOT\\s+book:" + abbr_l + "\\b");
+            book_re = new RegExp("\\bbook:" + abbr_l + "\\b");
+            any_book_re = new RegExp("\\bbook:\\w+");
+
+            if (not_book_re.test(q)) {
+                new_q = q.replace(not_book_re, "book:" + abbr_l)
+            } else if (book_re.test(q)) {
+                new_q = q.replace(book_re, "NOT book:" + abbr_l)
+            } else if (any_book_re.test(q)) {
+                new_q = q.replace(any_book_re, "book:" + abbr_l);
             } else {
-                new_q = (q + " book:" + abbr.toLowerCase() + " ").trimLeft();
+                new_q = (q + " book:" + abbr_l + " ").trimLeft();
             }
             document.getElementById('query').value = new_q;
         }
