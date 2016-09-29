@@ -35,16 +35,19 @@ def link_abbr(abbr):
 
 @app.template_filter('example')
 def example_link(s):
-    return '<a href="/q/{}/">{}</a>'.format(pretty_url(s), s)
+    return '<a href="/q/{}/">{}</a>'.format(pretty_url(s, is_href=True), s)
 
 
-def pretty_url(s, undo=False):
+def pretty_url(s, is_href=False, undo=False):
     if undo:
         s = urllib.parse.unquote_plus(s)
     else:
         # valid path component chars are: '()*: http://stackoverflow.com/a/2375597/879
         # but browsers seem okay with []{} also
-        s = urllib.parse.quote_plus(s, safe='[]{}\'()*:')
+        safe = '[]{}\'()*:'
+        if not is_href:
+            safe += '"'
+        s = urllib.parse.quote_plus(s, safe)
     return s
 
 
@@ -78,18 +81,24 @@ def search_form(input=None):
 
         result_len = len(results)
         if result_len <= session_limit:
-            output = ["<h2>{} results for {}</h2>".format(result_len, query)]
+            output = ['<h2 id="results">{} result{} for {}</h2>'.format(result_len, 's' if result_len > 1 else '', query)]
         else:
-            output = ["<h2>Top {} of {} results for {}</h2>".format(min(session_limit, result_len), result_len, query)]
+            output = ['<h3 style="font-variant: small-caps">Page support coming soon!</h3><h2 id="results">Top {} of {} results for {}</h2>'.format(min(session_limit, result_len), result_len, query)]
 
 
         for h_idx, hit in enumerate(results):
-            highlights = hit.highlights('content', top=paragraph_limit)
+            highlights = hit.highlights('content', top=100 if result_len == 1 else paragraph_limit)
 
-            output.append("""<details>
-<span style="font-size: 0.9em">- {0[book_name]}<br />{0[long]}</span>
-<summary>{0[book_abbr]} {0[short]}<a href="{0[book_url]}" target="_blank"><img src="/static/{0[book_abbr]}.png" style="vertical-align: text-bottom; height: 1.5em; padding: 0em 0.5em;"/></a></summary>
-</details>""".format(hit))
+            output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')"> ► </a>'.format(h_idx))
+
+            if result_len > 1:
+                session_link = "/q/{}/".format(pretty_url('{} session:"{}"'.format(input, hit['session'].replace(',', '')), is_href=True))
+                output.append('<a href="{1}" class="session-link">{0[book_abbr]} {0[short]}</a>'.format(hit, session_link))
+            else:
+                output.append('{0[book_abbr]} {0[short]}'.format(hit))
+
+            output.append('<a href="{0[book_url]}" class="book-link" target="_blank"><img src="/static/{0[book_abbr]}.png"/></a>'.format(hit))
+            output.append('<span class="hit-long" id="hit-{1}-long" style="display: none"><br />- {0[book_name]}<br />{0[long]}</span>'.format(hit, h_idx))
 
             if not highlights:
                 output.append("<br />")
@@ -100,7 +109,7 @@ def search_form(input=None):
             for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
                 paragraph = commonmark(cm_paragraph)
                 # if True:
-                if h_idx == 0:
+                if h_idx == 0 and p_idx < paragraph_limit:
                     excerpt = paragraph
                 else:
                     sentences = get_sentence_fragments(paragraph)
