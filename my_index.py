@@ -28,7 +28,8 @@ def title(_text):
 def create_index(indexdir):
     schema = Schema(book_abbr=STORED(),
                     book_name=STORED(),
-                    book_url=STORED(),
+                    book_tree=STORED(),
+                    book_kindle=STORED(),
                     short=STORED(),
                     long=STORED(),
                     book=ID(stored=True),
@@ -47,7 +48,8 @@ def create_index(indexdir):
         d = {
             'book_name': book['name'],
             'book_abbr': book['abbr'],
-            'book_url': book['url'],
+            'book_tree': book['tree'],
+            'book_kindle': book['kindle'],
             'book': book['abbr'].lower(),
         }
 

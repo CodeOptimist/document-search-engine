@@ -97,7 +97,8 @@ def search_form(input=None):
             else:
                 output.append('{0[book_abbr]} {0[short]}'.format(hit))
 
-            output.append('<a href="{0[book_url]}" class="book-link" target="_blank"><img src="/static/{0[book_abbr]}.png"/></a>'.format(hit))
+            output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img style="padding-left:0.4em" src="/static/{0[book_abbr]}.png"/></a>'.format(hit))
+            output.append('<a href="{0[book_kindle]}" class="book-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
             output.append('<span class="hit-long" id="hit-{1}-long" style="display: none"><br />- {0[book_name]}<br />{0[long]}</span>'.format(hit, h_idx))
 
             if not highlights:
