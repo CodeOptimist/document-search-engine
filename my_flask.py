@@ -40,8 +40,10 @@ def example_link(s):
 
 def pretty_url(s, is_href=False, undo=False):
     if undo:
+        s = s.replace('\'', '"')
         s = urllib.parse.unquote_plus(s)
     else:
+        s = s.replace('"', '\'')
         # valid path component chars are: '()*: http://stackoverflow.com/a/2375597/879
         # but browsers seem okay with []{} also
         safe = '[]{}\'()*:'
@@ -83,23 +85,29 @@ def search_form(input=None):
         if result_len <= session_limit:
             output = ['<h2 id="results">{} result{} for {}</h2>'.format(result_len, 's' if result_len > 1 else '', query)]
         else:
-            output = ['<h3 style="font-variant: small-caps">Page support coming soon!</h3><h2 id="results">Top {} of {} results for {}</h2>'.format(min(session_limit, result_len), result_len, query)]
+            output = ['<h2 id="results">Top {} of {} results for {}</h2>'.format(min(session_limit, result_len), result_len, query)]
 
 
         for h_idx, hit in enumerate(results):
-            highlights = hit.highlights('content', top=100 if result_len == 1 else paragraph_limit)
+            highlights = hit.highlights('content', top=50 if result_len == 1 else paragraph_limit)
 
             output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')"> ► </a>'.format(h_idx))
 
-            if result_len > 1:
-                session_link = "/q/{}/".format(pretty_url('{} session:"{}"'.format(input, hit['session'].replace(',', '')), is_href=True))
-                output.append('<a href="{1}" class="session-link">{0[book_abbr]} {0[short]}</a>'.format(hit, session_link))
+            if result_len > 1 and 'content:' in str(query):
+                if hit['session']:
+                    session = hit['session'].replace(',', '')
+                    session = re.sub(r'^Session ', r'', session)
+                    unique_link = "/q/{}/".format(pretty_url('session:"{}" {}'.format(session, input), is_href=True))
+                else:
+                    # a bit hackish the way I use hit['short'] here... relies upon the fact that in this case that happens to be only the heading
+                    unique_link = "/q/{}/".format(pretty_url('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), hit['short'], input), is_href=True))
+                output.append('<a href="{1}" class="unique-link">{0[book_abbr]} {0[short]}</a>'.format(hit, unique_link))
             else:
                 output.append('{0[book_abbr]} {0[short]}'.format(hit))
 
             output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img style="padding-left:0.4em" src="/static/{0[book_abbr]}.png"/></a>'.format(hit))
-            output.append('<a href="{0[book_kindle]}" class="book-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
-            output.append('<span class="hit-long" id="hit-{1}-long" style="display: none"><br />- {0[book_name]}<br />{0[long]}</span>'.format(hit, h_idx))
+            output.append('<a href="{0[book_kindle]}" class="book-link" target="_blank"><img src="/static/kindle.png"/></a><br />'.format(hit))
+            output.append('<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>'.format(hit, h_idx))
 
             if not highlights:
                 output.append("<br />")
@@ -109,25 +117,31 @@ def search_form(input=None):
 
             for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
                 paragraph = commonmark(cm_paragraph)
-                # if True:
+                # if False:
                 if h_idx == 0 and p_idx < paragraph_limit:
                     excerpt = paragraph
                 else:
+                    if p_idx == paragraph_limit:
+                        output.append("<hr>")
                     sentences = get_sentence_fragments(paragraph)
                     excerpt = ' <span class="omission">[...]</span> '.join(sentences)
                 output.append("<li><p>{}</p></li>".format(excerpt))
 
-            output.append("</ul><br />")
+            output.append("</ul>")
+            # if result_len > 1 and h_idx == 0:
+            #     output.append("<hr>")
+            output.append("<br />")
         result = '\n'.join(output)
 
-        return render_template("search-form.html", books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
+        scroll = 'session:' in str(query) and result_len == 1
+        return render_template("search-form.html", scroll=scroll, books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
 
 
 def get_sentence_fragments(paragraph):
     bs_paragraph = BeautifulSoup(paragraph, "lxml")
 
     fragments = []
-    sentence_split = filter(None, re.split(r'(.*?(\.”|[\.\?!])[\s$])', paragraph))
+    sentence_split = filter(None, re.split(r'(.*?(?:\.”|[\.\?!])[\s$])', paragraph))
     last_match_idx = None
     for s_idx, sentence in enumerate(sentence_split):
         sentence = sentence.strip('\n')
