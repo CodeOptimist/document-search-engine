@@ -94,19 +94,19 @@ def search_form(input=None):
             output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')"> ► </a>'.format(h_idx))
 
             if result_len > 1 and 'content:' in str(query):
-                if hit['session']:
-                    session = hit['session'].replace(',', '')
-                    session = re.sub(r'^Session ', r'', session)
-                    unique_link = "/q/{}/".format(pretty_url('session:"{}" {}'.format(session, input), is_href=True))
-                else:
-                    # a bit hackish the way I use hit['short'] here... relies upon the fact that in this case that happens to be only the heading
-                    unique_link = "/q/{}/".format(pretty_url('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), hit['short'], input), is_href=True))
-                output.append('<a href="{1}" class="unique-link">{0[book_abbr]} {0[short]}</a>'.format(hit, unique_link))
+                direct_link = get_direct_link(hit, input)
+                output.append('<a href="{1}" class="direct-link">{0[book_abbr]} {0[short]}</a>'.format(hit, direct_link))
             else:
                 output.append('{0[book_abbr]} {0[short]}'.format(hit))
 
-            output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img style="padding-left:0.4em" src="/static/{0[book_abbr]}.png"/></a>'.format(hit))
-            output.append('<a href="{0[book_kindle]}" class="book-link" target="_blank"><img src="/static/kindle.png"/></a><br />'.format(hit))
+            output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, hit['book_abbr'].lower()))
+            output.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
+
+            for key_term in hit['key_terms']:
+                direct_link = get_direct_link(hit, key_term)
+                output.append('<a class="key-term" href="{}">{}</a> '.format(direct_link, key_term))
+            output.append('<br />')
+
             output.append('<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>'.format(hit, h_idx))
 
             if not highlights:
@@ -122,7 +122,7 @@ def search_form(input=None):
                     excerpt = paragraph
                 else:
                     if p_idx == paragraph_limit:
-                        output.append("<hr>")
+                        output.append("</ul><hr><ul>")
                     sentences = get_sentence_fragments(paragraph)
                     excerpt = ' <span class="omission">[...]</span> '.join(sentences)
                 output.append("<li><p>{}</p></li>".format(excerpt))
@@ -135,6 +135,17 @@ def search_form(input=None):
 
         scroll = 'session:' in str(query) and result_len == 1
         return render_template("search-form.html", scroll=scroll, books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
+
+
+def get_direct_link(hit, input):
+    if hit['session']:
+        session = hit['session'].replace(',', '')
+        session = re.sub(r'^Session ', r'', session)
+        result = "/q/{}/".format(pretty_url('session:"{}" {}'.format(session, input), is_href=True))
+    else:
+        # a bit hackish the way I use hit['short'] here... relies upon the fact that in this case that happens to be only the heading
+        result = "/q/{}/".format(pretty_url('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), hit['short'], input), is_href=True))
+    return result
 
 
 def get_sentence_fragments(paragraph):
@@ -193,11 +204,13 @@ if not os.path.isdir(indexdir):
 rebuild = False
 if rebuild:
     ix = my_index.create_index(indexdir)
+    my_index.add_key_terms(ix)
 else:
     try:
         ix = index.open_dir(indexdir)
     except index.EmptyIndexError:
         ix = my_index.create_index(indexdir)
+        my_index.add_key_terms(ix)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

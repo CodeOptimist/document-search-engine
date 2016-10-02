@@ -1,5 +1,4 @@
 import re
-import timeit
 
 from books import Books
 
@@ -25,6 +24,20 @@ def title(_text):
     return text
 
 
+def add_key_terms(ix):
+    s = ix.searcher()
+    w = ix.writer()
+    for doc_num in s.document_numbers():
+        fields = s.stored_fields(doc_num)
+        key_terms = [k for k, v in s.key_terms([doc_num], 'key_term_content', numterms=5)]
+        fields['key_terms'] = key_terms
+        fields['content'] = fields['key_term_content']
+        del fields['key_term_content']
+        w.delete_document(doc_num)
+        w.add_document(**fields)
+    w.commit()
+
+
 def create_index(indexdir):
     schema = Schema(book_abbr=STORED(),
                     book_name=STORED(),
@@ -32,10 +45,11 @@ def create_index(indexdir):
                     book_kindle=STORED(),
                     short=STORED(),
                     long=STORED(),
+                    key_terms=STORED(),
+                    key_term_content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(re.compile(r"\w*(\.?\w+)*[A-Za-z]", re.UNICODE))),
                     book=ID(stored=True),
                     heading=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
-                    # content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer()))
                     content=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer()))
 
     ix = index.create_in(indexdir, schema)
@@ -112,7 +126,7 @@ def get_tiers(book, tiers, header):
 def add_document(writer, d, tiers, content):
     d['session'] = tiers[2][0]
     d['heading'] = ' '.join([tiers[i][j] for i in range(3) for j in range(2) if (i, j) != (2, 0) and tiers[i][j]])
-    d['content'] = content
+    d['key_term_content'] = content
 
     start = 1 if tiers[1][0] else 0
     d['short'] = ': '.join([tiers[i][0] for i in range(start, 3) if tiers[i][0]])
