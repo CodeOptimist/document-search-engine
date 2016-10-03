@@ -102,7 +102,7 @@ def search_form(input=None):
             output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, hit['book_abbr'].lower()))
             output.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
 
-            for key_term in hit['key_terms']:
+            for key_term in hit['key_terms'][:5]:
                 direct_link = get_direct_link(hit, key_term)
                 output.append('<a class="key-term" href="{}">{}</a> '.format(direct_link, key_term))
             output.append('<br />')

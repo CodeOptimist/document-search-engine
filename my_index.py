@@ -27,10 +27,20 @@ def title(_text):
 def add_key_terms(ix):
     s = ix.searcher()
     w = ix.writer()
+    stemmer = analysis.StemmingAnalyzer()
+
     for doc_num in s.document_numbers():
         fields = s.stored_fields(doc_num)
-        key_terms = [k for k, v in s.key_terms([doc_num], 'key_term_content', numterms=5)]
-        fields['key_terms'] = key_terms
+        key_terms = [k for k, v in s.key_terms([doc_num], 'key_term_content', numterms=10)]
+        stemmed = [t.text for t in stemmer(' '.join(key_terms))]
+        final_terms = []
+        final_stemmed = []
+        for (term, stemmed_term) in zip(key_terms, stemmed):
+            if stemmed_term not in final_stemmed:
+                final_terms.append(term)
+                final_stemmed.append(stemmed_term)
+
+        fields['key_terms'] = final_terms
         fields['content'] = fields['key_term_content']
         del fields['key_term_content']
         w.delete_document(doc_num)
@@ -46,7 +56,7 @@ def create_index(indexdir):
                     short=STORED(),
                     long=STORED(),
                     key_terms=STORED(),
-                    key_term_content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(re.compile(r"\w*(\.?\w+)*[A-Za-z]", re.UNICODE))),
+                    key_term_content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(re.compile(r'\w*(\.?\w+)*(?![0-9])\w', re.UNICODE))),
                     book=ID(stored=True),
                     heading=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
