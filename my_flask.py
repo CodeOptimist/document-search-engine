@@ -62,19 +62,17 @@ def search_form(input=None):
         if input:
             return redirect(url_for('search_form', input=input))
     if not input:
-        return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
+        return render_template("search-form.html", books=Books.indexed)
 
     input = pretty_url(input, undo=True)
     with ix.searcher() as searcher:
         input = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), input)
         query = QueryParser('content', ix.schema).parse(input)
         if isinstance(query, _NullQuery):
-            return render_template("search-form.html", books=Books.indexed, session_limit=session_limit, paragraph_limit=paragraph_limit)
+            return render_template("search-form.html", books=Books.indexed)
 
-        if 'content:' in str(query):
-            results = searcher.search(query, limit=session_limit)
-        else:
-            results = searcher.search(query, limit=150)
+        limit = session_limit if 'content:' in str(query) else 150
+        results = searcher.search(query, limit=limit)
 
         results.fragmenter = ParagraphFragmenter()
         results.order = highlight.SCORE
@@ -82,10 +80,10 @@ def search_form(input=None):
         results.formatter = highlight.HtmlFormatter(between='')
 
         result_len = len(results)
-        if result_len <= session_limit:
+        if result_len <= limit:
             output = ['<h2 id="results">{} result{} for {}</h2>'.format(result_len, 's' if result_len > 1 else '', query)]
         else:
-            output = ['<h2 id="results">Top {} of {} results for {}</h2>'.format(min(session_limit, result_len), result_len, query)]
+            output = ['<h2 id="results">Top {} of {} results for {}</h2>'.format(min(limit, result_len), result_len, query)]
 
 
         for h_idx, hit in enumerate(results):
@@ -134,7 +132,7 @@ def search_form(input=None):
         result = '\n'.join(output)
 
         scroll = 'session:' in str(query) and result_len == 1
-        return render_template("search-form.html", scroll=scroll, books=Books.indexed, query=input, result=result, session_limit=session_limit, paragraph_limit=paragraph_limit)
+        return render_template("search-form.html", scroll=scroll, books=Books.indexed, query=input, result=result)
 
 
 def get_direct_link(hit, input):

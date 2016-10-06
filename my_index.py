@@ -56,7 +56,7 @@ def create_index(indexdir):
                     short=STORED(),
                     long=STORED(),
                     key_terms=STORED(),
-                    key_term_content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(re.compile(r'\w*(\.?\w+)*(?![0-9])\w', re.UNICODE))),
+                    key_term_content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(re.compile(r'(?<!\*\*)\b\w*(\.?\w+)*(?![0-9])\w\b(?!\*\*)', re.UNICODE))),
                     book=ID(stored=True),
                     heading=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
