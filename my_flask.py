@@ -1,22 +1,24 @@
-import os, sys, re
+import argparse
+import os
+import re
+import sys
 import urllib.parse
 
+from CommonMark import commonmark
+from bs4 import BeautifulSoup
+from flask import Flask, request, render_template
 from flask import redirect
 from flask import url_for
-from whoosh import highlight, index
-from whoosh.qparser import QueryParser
-from CommonMark import commonmark
-from whoosh.query.qcore import _NullQuery
-import argparse
-from bs4 import BeautifulSoup
-
-from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer
-from books import Books
-import my_index
-
-from flask import Flask, request, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from whoosh import highlight, index
+from whoosh.qparser import QueryParser
+# noinspection PyProtectedMember
+from whoosh.query.qcore import _NullQuery
+
+import my_index
+from books import Books
+from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer
 
 app = Flask(__name__)
 limiter = Limiter(
@@ -28,26 +30,26 @@ session_limit = 7
 paragraph_limit = 3
 
 
-@app.template_filter('link_abbr')
-def link_abbr(abbr):
+@app.template_filter('book_link')
+def book_link(abbr):
     return """<a href="javascript:void()" onclick="filterBook('{0}')">{0}</a>""".format(abbr)
 
 
 @app.template_filter('example')
-def example_link(s):
-    return '<a href="/q/{}/">{}</a>'.format(pretty_url(s, is_href=True), s)
+def example_link(q):
+    return '<a href="/q/{}/">{}</a>'.format(urlize(q, in_href=True), q)
 
 
-def pretty_url(s, is_href=False, undo=False):
+def urlize(s, in_href=False, undo=False):
     if undo:
         s = s.replace('\'', '"')
         s = urllib.parse.unquote_plus(s)
     else:
         s = s.replace('"', '\'')
-        # valid path component chars are: '()*: http://stackoverflow.com/a/2375597/879
+        # valid path component chars are: ()':* http://stackoverflow.com/a/2375597/879
         # but browsers seem okay with []{} also
         safe = '[]{}\'()*:'
-        if not is_href:
+        if not in_href:
             safe += '"'
         s = urllib.parse.quote_plus(s, safe)
     return s
@@ -55,24 +57,24 @@ def pretty_url(s, is_href=False, undo=False):
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/q/', methods=['GET', 'POST'])
-@app.route('/q/<input>/', methods=['GET', 'POST'])
-def search_form(input=None):
+@app.route('/q/<query>/', methods=['GET', 'POST'])
+def search_form(query=None):
     if request.method == 'POST':
-        input = pretty_url(request.form['query'].strip())
-        if input:
-            return redirect(url_for('search_form', input=input))
-    if not input:
+        query = urlize(request.form['query'].strip())
+        if query:
+            return redirect(url_for('search_form', query=query))
+    if not query:
         return render_template("search-form.html", books=Books.indexed)
 
-    input = pretty_url(input, undo=True)
+    query = urlize(query, undo=True)
     with ix.searcher() as searcher:
-        input = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), input)
-        query = QueryParser('content', ix.schema).parse(input)
-        if isinstance(query, _NullQuery):
+        query = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), query)
+        qp = QueryParser('content', ix.schema).parse(query)
+        if isinstance(qp, _NullQuery):
             return render_template("search-form.html", books=Books.indexed)
 
-        limit = session_limit if 'content:' in str(query) else 150
-        results = searcher.search(query, limit=limit)
+        limit = session_limit if 'content:' in str(qp) else 150
+        results = searcher.search(qp, limit=limit)
 
         results.fragmenter = ParagraphFragmenter()
         results.order = highlight.SCORE
@@ -81,18 +83,17 @@ def search_form(input=None):
 
         result_len = len(results)
         if result_len <= limit:
-            output = ['<h2 id="results">{} result{} for {}</h2>'.format(result_len, 's' if result_len > 1 else '', query)]
+            output = ['<h2 id="results">{} result{} for {}</h2>'.format(result_len, 's' if result_len > 1 else '', qp)]
         else:
-            output = ['<h2 id="results">Top {} of {} results for {}</h2>'.format(min(limit, result_len), result_len, query)]
-
+            output = ['<h2 id="results">Top {} of {} results for {}</h2>'.format(min(limit, result_len), result_len, qp)]
 
         for h_idx, hit in enumerate(results):
             highlights = hit.highlights('content', top=50 if result_len == 1 else paragraph_limit)
 
             output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')"> ► </a>'.format(h_idx))
 
-            if result_len > 1 and 'content:' in str(query):
-                direct_link = get_direct_link(hit, input)
+            direct_link = get_single_result_link(hit, query)
+            if result_len > 1 and 'content:' in str(qp):
                 output.append('<a href="{1}" class="direct-link">{0[book_abbr]} {0[short]}</a>'.format(hit, direct_link))
             else:
                 output.append('{0[book_abbr]} {0[short]}'.format(hit))
@@ -101,8 +102,8 @@ def search_form(input=None):
             output.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
 
             for key_term in hit['key_terms'][:5]:
-                direct_link = get_direct_link(hit, key_term)
-                output.append('<a class="key-term" href="{}">{}</a> '.format(direct_link, key_term))
+                term_link = get_single_result_link(hit, key_term)
+                output.append('<a class="key-term" href="{}">{}</a> '.format(term_link, key_term))
             output.append('<br />')
 
             output.append('<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>'.format(hit, h_idx))
@@ -112,9 +113,9 @@ def search_form(input=None):
                 continue
 
             output.append("<ul>")
-
             for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
                 paragraph = commonmark(cm_paragraph)
+
                 # if False:
                 if h_idx == 0 and p_idx < paragraph_limit:
                     excerpt = paragraph
@@ -122,56 +123,57 @@ def search_form(input=None):
                     if p_idx == paragraph_limit:
                         output.append("</ul><hr><ul>")
                     sentences = get_sentence_fragments(paragraph)
-                    excerpt = ' <span class="omission">[...]</span> '.join(sentences)
+                    excerpt = '<a href="{}" class="omission"> [...] </a>'.format(direct_link).join(sentences)
                 output.append("<li><p>{}</p></li>".format(excerpt))
-
             output.append("</ul>")
+
             # if result_len > 1 and h_idx == 0:
             #     output.append("<hr>")
             output.append("<br />")
         result = '\n'.join(output)
 
-        scroll = 'session:' in str(query) and result_len == 1
-        return render_template("search-form.html", scroll=scroll, books=Books.indexed, query=input, result=result)
+        scroll = 'session:' in str(qp) and result_len == 1
+        return render_template("search-form.html", books=Books.indexed, query=query, result=result, scroll=scroll)
 
 
-def get_direct_link(hit, input):
+def get_single_result_link(hit, query):
     if hit['session']:
-        session = hit['session'].replace(',', '')
-        session = re.sub(r'^Session ', r'', session)
-        result = "/q/{}/".format(pretty_url('session:"{}" {}'.format(session, input), is_href=True))
+        session = re.sub(r'[^\w\s]', '', hit['session'])
+        session = re.sub(r'^session ', r'', session, flags=re.IGNORECASE)
+        result = "/q/{}/".format(urlize('session:"{}" {}'.format(session, query), in_href=True))
     else:
         # a bit hackish the way I use hit['short'] here... relies upon the fact that in this case that happens to be only the heading
-        result = "/q/{}/".format(pretty_url('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), hit['short'], input), is_href=True))
+        result = "/q/{}/".format(urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), hit['short'], query), in_href=True))
     return result
 
 
 def get_sentence_fragments(paragraph):
-    bs_paragraph = BeautifulSoup(paragraph, "lxml")
+    paragraph_bs = BeautifulSoup(paragraph, 'lxml')
 
     fragments = []
-    sentence_split = filter(None, re.split(r'(.*?(?:\.”|[\.\?!])[\s$])', paragraph))
+    sentence_split = filter(None, re.split(r'(.*?(?:\.”|[.?!])[\s$])', paragraph))
     last_match_idx = None
-    for s_idx, sentence in enumerate(sentence_split):
-        sentence = sentence.strip('\n')
+    for s_idx, raw_sentence in enumerate(sentence_split):
+        raw_sentence = raw_sentence.strip('\n')
 
-        if 'class="match ' in sentence:
-            sentence_in_paragraph_tag = get_deepest_match(bs_paragraph, sentence)
+        if 'class="match ' in raw_sentence:
+            sentence_in_paragraph_tag = get_deepest_match(paragraph_bs, raw_sentence)
             term_in_sentence_tag = get_deepest_match(sentence_in_paragraph_tag, 'class="match ')
             is_italics = any(tag.name == 'em' for tag in term_in_sentence_tag.parents)
 
-            sentence_bs = BeautifulSoup(sentence, "lxml")
-            fragment = str(sentence_bs.body)
-            fragment = re.sub(r'^<body>|</body>$', r'', fragment)
-            fragment = re.sub(r'^<p>|</p>$', r'', fragment)
+            sentence_bs = BeautifulSoup(raw_sentence, "lxml")
+            sentence = str(sentence_bs.body)
+            sentence = re.sub(r'^<body>|</body>$', r'', sentence)
+            sentence = re.sub(r'^<p>|</p>$', r'', sentence)
 
-            if is_italics and not fragment.startswith('<em>'):
-                fragment = "<em>{}</em>".format(fragment)
+            if is_italics and not sentence.startswith('<em>'):
+                sentence = "<em>{}</em>".format(sentence)
 
-            if s_idx - 1 == last_match_idx:
-                fragments[-1] += fragment
+            is_adjacent = s_idx - 1 == last_match_idx
+            if is_adjacent:
+                fragments[-1] += sentence
             else:
-                fragments.append(fragment)
+                fragments.append(sentence)
             last_match_idx = s_idx
     return fragments
 
@@ -184,38 +186,26 @@ def get_deepest_match(bs, html):
     assert result
     return result
 
-
-def kt(q, numterms=10):
-    s = ix.searcher()
-    qp = QueryParser('content', ix.schema).parse(q)
-    kt = s.search(qp).key_terms('content', numterms=numterms)
-    return [term for (term, score) in kt]
-
-
 os.chdir(sys.path[0])
-indexdir = 'indexdir'
+index_dir = 'index'
 
-if not os.path.isdir(indexdir):
-    os.mkdir(indexdir)
+if not os.path.isdir(index_dir):
+    os.mkdir(index_dir)
 
 # rebuild = True
 rebuild = False
 if rebuild:
-    ix = my_index.create_index(indexdir)
-    my_index.add_key_terms(ix)
+    ix = my_index.create_index_and_key_terms(index_dir)
 else:
     try:
-        ix = index.open_dir(indexdir)
+        ix = index.open_dir(index_dir)
     except index.EmptyIndexError:
-        ix = my_index.create_index(indexdir)
-        my_index.add_key_terms(ix)
+        ix = my_index.create_index_and_key_terms(index_dir)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--interactive", help="load search index interactively", action="store_true")
     args = parser.parse_args()
 
-    if args.interactive:
-        s = ix.searcher()
-    else:
+    if not args.interactive:
         app.run()

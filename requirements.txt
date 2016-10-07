@@ -1,0 +1,15 @@
+beautifulsoup4==4.5.1
+click==6.6
+CommonMark==0.7.2
+Flask==0.11.1
+Flask-Limiter==0.9.3
+future==0.15.2
+gunicorn==19.6.0
+itsdangerous==0.24
+Jinja2==2.8
+limits==1.1.1
+lxml==3.6.4
+MarkupSafe==0.23
+six==1.10.0
+Werkzeug==0.11.11
+Whoosh==2.7.4

@@ -1,9 +1,8 @@
-from whoosh.highlight import Fragmenter, Fragment, Formatter, BasicFragmentScorer
-import random
+from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
 
 
 class ParagraphFragmenter(Fragmenter):
-    def __init__(self):
+    def fragment_matches(self, text, matched_tokens):
         pass
 
     def fragment_tokens(self, text, tokens):
@@ -23,7 +22,8 @@ class ParagraphFragmenter(Fragmenter):
         if paragraph_tokens:
             yield Fragment(text, paragraph_tokens, last[0], last[1])
 
-    def get_paragraph_pos(self, text, t):
+    @staticmethod
+    def get_paragraph_pos(text, t):
         try:
             paragraph_start = text[:t.startchar].rindex('\n')
         except ValueError:
