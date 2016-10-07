@@ -4,6 +4,7 @@ from whoosh import index, analysis
 from whoosh.fields import ID, TEXT, Schema, STORED
 
 from books import Books
+from my_whoosh import CleanupStandardAnalyzer
 
 
 def pre_process_book(book, text):
@@ -117,7 +118,7 @@ def create_index(index_dir):
                     short=STORED(),
                     long=STORED(),
                     key_terms=STORED(),
-                    key_term_content=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(re.compile(key_term_re, re.UNICODE))),
+                    key_term_content=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(re.compile(key_term_re, re.UNICODE))),
                     book=ID(stored=True),
                     heading=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),

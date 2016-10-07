@@ -1,3 +1,4 @@
+from whoosh.analysis import RegexTokenizer, LowercaseFilter, StopFilter, STOP_WORDS, default_pattern, Filter
 from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
 
 
@@ -43,3 +44,19 @@ class ConsistentFragmentScorer(BasicFragmentScorer):
         if f.startchar:
             score += 1 / f.startchar
         return score
+
+
+def CleanupStandardAnalyzer(expression=default_pattern, stoplist=STOP_WORDS, minsize=2, maxsize=None, gaps=False):
+    ret = RegexTokenizer(expression=expression, gaps=gaps)
+    # added CleanupFilter here
+    chain = ret | CleanupFilter() | LowercaseFilter()
+    if stoplist is not None:
+        chain = chain | StopFilter(stoplist=stoplist, minsize=minsize, maxsize=maxsize)
+    return chain
+
+
+class CleanupFilter(Filter):
+    def __call__(self, tokens):
+        for t in tokens:
+            t.text = t.text.replace(r'*', '')
+            yield t
