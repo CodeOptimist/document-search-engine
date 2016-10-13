@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta name="robots" content="nofollow" />
+    <meta name="description" content="A search engine for the Seth material as dictated by Jane Roberts and transcribed by Robert F. Butts." />
 	<title>Seth corpus search</title>
     <script>
         function filterBook(abbr) {
@@ -22,6 +23,7 @@
                 new_q = (q + " book:" + abbr_l + " ").trimLeft();
             }
             document.getElementById('query').value = new_q;
+            document.getElementById('query').focus();
         }
 
         function toggleDisplay(self, id) {
@@ -91,7 +93,7 @@
 <p id="books">Current books: {{ books|map(attribute='abbr')|map('book_link')|join(', ')|safe }}</p>
 <form method="post">
     <!--suppress SillyAssignmentJS -->
-    <input autofocus required type="text" id="query" name="query" title="query" onfocus="this.value = this.value" value="{{ query }}">
+    <input {% if not query %}autofocus{% endif %} required type="text" id="query" name="query" title="query" onfocus="this.value = this.value" value="{{ query }}">
     <input type="submit" value="Search">
 </form>
 <p>The entire Seth collection, including audio, early and personal sessions, can be ordered from <a href="https://sethcenter.com/collections/books">sethcenter.com</a>.<br />
