@@ -138,12 +138,13 @@ def search_form(query=None):
 
 def get_single_result_link(hit, query):
     if hit['session']:
-        session = re.sub(r'[^\w\s]', '', hit['session'])
+        session = re.sub(r'[^\w\s’]', '', hit['session'])
         session = re.sub(r'^session ', r'', session, flags=re.IGNORECASE)
         result = "/q/{}/".format(urlize('session:"{}" {}'.format(session, query), in_href=True))
     else:
-        # a bit hackish the way I use hit['short'] here... relies upon the fact that in this case that happens to be only the heading
-        result = "/q/{}/".format(urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), hit['short'], query), in_href=True))
+        # a bit hackish, in this case 'short' happens to be only the heading
+        heading = re.sub(r'[^\w\s’]', '', hit['short'])
+        result = "/q/{}/".format(urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, query), in_href=True))
     return result
 
 

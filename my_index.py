@@ -89,6 +89,7 @@ def title(_text):
     if not re.search(r'[a-z]', text):
         text = text.title()
         text = re.sub(r'\bEsp\b', r'ESP', text)
+        text = re.sub(r"(\w[’'])S\b", r'\1s', text)
     return text
 
 
@@ -130,6 +131,8 @@ def create_index(index_dir):
     for book in Books.indexed:
         with open("books/{}.txt".format(book['abbr']), encoding='utf-8') as f:
             text = pre_process_book(book, f.read())
+        if 'book_re' in book:
+            text = re.search(book['book_re'], text, flags=re.DOTALL).group(1)
 
         d = {
             'book_name': book['name'],
