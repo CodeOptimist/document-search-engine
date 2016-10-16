@@ -89,6 +89,8 @@ def title(_text):
     if not re.search(r'[a-z]', text):
         text = text.title()
         text = re.sub(r'\bEsp\b', r'ESP', text)
+        text = re.sub(r'\bRfb\b', r'RFB', text)
+        text = re.sub(r'\bSeth Ii\b', r'Seth II', text)
         text = re.sub(r"(\w[’'])S\b", r'\1s', text)
     return text
 
@@ -131,8 +133,7 @@ def create_index(index_dir):
     for book in Books.indexed:
         with open("books/{}.txt".format(book['abbr']), encoding='utf-8') as f:
             text = pre_process_book(book, f.read())
-        if 'book_re' in book:
-            text = re.search(book['book_re'], text, flags=re.DOTALL).group(1)
+        text = re.search(book['book_re'], text, flags=re.DOTALL).group(1)
 
         d = {
             'book_name': book['name'],
@@ -144,7 +145,7 @@ def create_index(index_dir):
 
         heading_tiers = [{'short': '', 'long': ''}] * 3
         carry_over_header = None
-        headers = list(filter(None, book['headers_re'].split(text)[1:-2]))
+        headers = list(filter(None, book['headers_re'].split(text)[1:]))
         for (_header, _content) in zip(headers[::2], headers[1::2]):
             content = _header + _content
             if carry_over_header:
