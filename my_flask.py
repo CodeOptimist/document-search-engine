@@ -24,7 +24,7 @@ app = Flask(__name__)
 limiter = Limiter(
     app,
     key_func=get_remote_address,
-    global_limits=["15 per minute", "100 per hour", "1000 per day"]
+    global_limits=["30 per minute", "200 per hour", "1000 per day"]
 )
 session_limit = 7
 paragraph_limit = 3
