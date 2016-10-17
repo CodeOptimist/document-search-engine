@@ -1,4 +1,4 @@
-from whoosh.analysis import RegexTokenizer, LowercaseFilter, StopFilter, STOP_WORDS, default_pattern, Filter
+from whoosh.analysis import RegexTokenizer, LowercaseFilter, StopFilter, STOP_WORDS, default_pattern, Filter, StemFilter, stem
 from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
 
 
@@ -53,6 +53,18 @@ def CleanupStandardAnalyzer(expression=default_pattern, stoplist=STOP_WORDS, min
     if stoplist is not None:
         chain = chain | StopFilter(stoplist=stoplist, minsize=minsize, maxsize=maxsize)
     return chain
+
+
+def CleanupStemmingAnalyzer(expression=default_pattern, stoplist=STOP_WORDS,
+                     minsize=2, maxsize=None, gaps=False, stemfn=stem,
+                     ignore=None, cachesize=50000):
+
+    ret = RegexTokenizer(expression=expression, gaps=gaps)
+    # added CleanupFilter here
+    chain = ret | CleanupFilter() | LowercaseFilter()
+    if stoplist is not None:
+        chain = chain | StopFilter(stoplist=stoplist, minsize=minsize, maxsize=maxsize)
+    return chain | StemFilter(stemfn=stemfn, ignore=ignore, cachesize=cachesize)
 
 
 class CleanupFilter(Filter):

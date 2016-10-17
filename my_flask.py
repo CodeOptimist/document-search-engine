@@ -62,18 +62,20 @@ def search_form(query=None):
     if request.method == 'POST':
         query = urlize(request.form['query'].strip())
         if query:
-            return redirect(url_for('search_form', query=query))
+            url = url_for('search_form', query=query).replace('%27', "'")
+            return redirect(url)
     if not query:
         return render_template("search-form.html", books=Books.indexed)
 
     query = urlize(query, undo=True)
     with ix.searcher() as searcher:
         query = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), query)
-        qp = QueryParser('content', ix.schema).parse(query)
+        qp = QueryParser('stemmed', my_index.search_schema).parse(query)
         if isinstance(qp, _NullQuery):
             return render_template("search-form.html", books=Books.indexed)
 
-        limit = session_limit if 'content:' in str(qp) else 150
+        is_content_query = 'stemmed:' in str(qp) or 'exact:' in str(qp)
+        limit = session_limit if is_content_query else 150
         results = searcher.search(qp, limit=limit)
 
         results.fragmenter = ParagraphFragmenter()
@@ -88,12 +90,12 @@ def search_form(query=None):
             output = ['<h2 id="results">Top {} of {} results for {}</h2>'.format(min(limit, result_len), result_len, qp)]
 
         for h_idx, hit in enumerate(results):
-            highlights = hit.highlights('content', top=50 if result_len == 1 else paragraph_limit)
+            highlights = hit.highlights('exact' if 'exact:' in str(qp) else 'stemmed', top=50 if result_len == 1 else paragraph_limit)
 
             output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')"> ► </a>'.format(h_idx))
 
             direct_link = get_single_result_link(hit, query)
-            if result_len > 1 and 'content:' in str(qp):
+            if result_len > 1 and is_content_query:
                 output.append('<a href="{1}" class="direct-link">{0[book_abbr]} {0[short]}</a>'.format(hit, direct_link))
             else:
                 output.append('{0[book_abbr]} {0[short]}'.format(hit))
@@ -187,26 +189,34 @@ def get_deepest_match(bs, html):
     assert result
     return result
 
-os.chdir(sys.path[0])
-index_dir = 'index'
 
-if not os.path.isdir(index_dir):
-    os.mkdir(index_dir)
+def main():
+    global ix
+    os.chdir(sys.path[0])
 
-# rebuild = True
-rebuild = False
-if rebuild:
-    ix = my_index.create_index_and_key_terms(index_dir)
-else:
+    index_dir = 'index'
+    if __name__ == '__main__':
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-i", "--interactive", help="load search index interactively", action='store_true')
+        parser.add_argument("-r", "--rebuild", help="rebuild index", nargs='?', const="index")
+        args = parser.parse_args()
+
+        if args.rebuild:
+            ix = my_index.create_index_and_key_terms(args.rebuild)
+        else:
+            ix = get_idx(index_dir)
+            if not args.interactive:
+                app.run()
+    else:
+        ix = get_idx(index_dir)
+
+
+def get_idx(index_dir):
     try:
         ix = index.open_dir(index_dir)
     except index.EmptyIndexError:
         ix = my_index.create_index_and_key_terms(index_dir)
+    return ix
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--interactive", help="load search index interactively", action="store_true")
-    args = parser.parse_args()
 
-    if not args.interactive:
-        app.run()
+main()

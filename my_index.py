@@ -1,10 +1,12 @@
+import os
 import re
 
 from whoosh import index, analysis
+from whoosh.analysis import StandardAnalyzer, StemmingAnalyzer, STOP_WORDS
 from whoosh.fields import ID, TEXT, Schema, STORED
 
 from books import Books
-from my_whoosh import CleanupStandardAnalyzer
+from my_whoosh import CleanupStandardAnalyzer, CleanupStemmingAnalyzer
 
 
 def pre_process_book(book, text):
@@ -54,7 +56,7 @@ def add_document(writer, d, tiers, content):
     d['long'] = ''.join(["- {}<br />".format(tier['long']) for tier in tiers if tier['long']])
 
     d['session'] = tiers[2]['short']
-    d['key_term_content'] = content
+    d['key_terms_content'] = content
     print(d['book_abbr'], d['heading'], d['session'])
     writer.add_document(**d)
 
@@ -64,9 +66,16 @@ def add_key_terms(ix):
     w = ix.writer()
     stemmer = analysis.StemmingAnalyzer()
 
+    print("Adding key terms...")
+    last_book = None
     for doc_num in s.document_numbers():
         fields = s.stored_fields(doc_num)
-        key_terms = [k for k, v in s.key_terms([doc_num], 'key_term_content', numterms=10)]
+        if fields['book_name'] != last_book:
+            last_book = fields['book_name']
+            print(last_book)
+        m = re.search(r'session (\d+)', fields['session'], flags=re.IGNORECASE)
+        session_num = m.group(1) if m else None
+        key_terms = [k for k, v in s.key_terms([doc_num], 'key_terms_content', numterms=10) if k != session_num]
         stemmed = [t.text for t in stemmer(' '.join(key_terms))]
 
         final_terms = []
@@ -77,8 +86,9 @@ def add_key_terms(ix):
                 final_stemmed.add(stemmed_term)
 
         fields['key_terms'] = final_terms
-        fields['content'] = fields['key_term_content']
-        del fields['key_term_content']
+        fields['stemmed'] = fields['key_terms_content']
+        fields['exact'] = fields['key_terms_content']
+        del fields['key_terms_content']
         w.delete_document(doc_num)
         w.add_document(**fields)
     w.commit()
@@ -110,10 +120,19 @@ def update_heading_tiers(book, tiers, header):
             tiers[tier_idx] = {'short': '', 'long': ''}
 
 
+# letters allowed, optionally interspersed with periods or asterisks, can't end with a number
+# if it's only numbers then it's fine to end with a number
+# term can't be adjacent to mid-line double asterisks
+# (remember that our pre-processing fixed *hello ho**w are you* to *hello how are you* already, so legitimate ones are safe)
+analyzer_re = re.compile(r'(?<![^\n]\*\*)\b(\w+([.*]?\w+)*(?<![0-9])|[0-9]+([.*]?[0-9]+)*)\b(?!\*\*[^\n])', re.UNICODE)
+search_schema = Schema(book=ID(stored=True),
+                       heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
+                       session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
+                       exact=TEXT(stored=True, analyzer=StandardAnalyzer(stoplist=None)),
+                       stemmed=TEXT(stored=True, analyzer=StemmingAnalyzer(stoplist=None)))
+
+
 def create_index(index_dir):
-    # letters interspersed with periods or asterisks allowed but can't end with a number
-    # and term can't be adjacent to double asterisks
-    key_term_re = r'(?<!\*\*)\b\w+([.*]?\w+)*(?<![0-9])\b(?!\*\*)'
     schema = Schema(book_abbr=STORED(),
                     book_name=STORED(),
                     book_tree=STORED(),
@@ -121,11 +140,13 @@ def create_index(index_dir):
                     short=STORED(),
                     long=STORED(),
                     key_terms=STORED(),
-                    key_term_content=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(re.compile(key_term_re, re.UNICODE))),
+                    # a stop list (default) is important here
+                    key_terms_content=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re)),
                     book=ID(stored=True),
-                    heading=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(minsize=1, stoplist=None)),
-                    session=TEXT(stored=True, analyzer=analysis.StandardAnalyzer(minsize=1, stoplist=None)),
-                    content=TEXT(stored=True, analyzer=analysis.StemmingAnalyzer(stoplist=None)))
+                    heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
+                    session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
+                    exact=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, stoplist=None)),
+                    stemmed=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None)))
 
     ix = index.create_in(index_dir, schema)
 
@@ -171,6 +192,9 @@ def create_index(index_dir):
 
 
 def create_index_and_key_terms(index_dir):
+    if not os.path.isdir(index_dir):
+        os.mkdir(index_dir)
+
     ix = create_index(index_dir)
     add_key_terms(ix)
     return ix
