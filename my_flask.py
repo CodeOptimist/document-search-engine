@@ -41,6 +41,7 @@ def example_link(q):
 
 
 def urlize(s, in_href=False, undo=False):
+    #print("Begin: {}".format(s))
     if undo:
         s = s.replace('\'', '"')
         s = urllib.parse.unquote_plus(s)
@@ -52,6 +53,7 @@ def urlize(s, in_href=False, undo=False):
         if not in_href:
             safe += '"'
         s = urllib.parse.quote_plus(s, safe)
+    #print("End: {}".format(s))
     return s
 
 
@@ -140,12 +142,14 @@ def search_form(query=None):
 
 def get_single_result_link(hit, query):
     if hit['session']:
-        session = re.sub(r'[^\w\s’]', '', hit['session'])
+        session = re.sub(r'[^\w’]', ' ', hit['session'])
+        session = re.sub(r'\s+', ' ', session)
         session = re.sub(r'^session ', r'', session, flags=re.IGNORECASE)
         result = "/q/{}/".format(urlize('session:"{}" {}'.format(session, query), in_href=True))
     else:
         # a bit hackish, in this case 'short' happens to be only the heading
-        heading = re.sub(r'[^\w\s’]', '', hit['short'])
+        heading = re.sub(r'[^\w’]', ' ', hit['short'])
+        heading = re.sub(r'\s+', ' ', heading)
         result = "/q/{}/".format(urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, query), in_href=True))
     return result
 
