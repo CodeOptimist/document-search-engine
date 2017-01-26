@@ -6,6 +6,7 @@ import urllib.parse
 
 from CommonMark import commonmark
 from bs4 import BeautifulSoup
+from bs4.dammit import EntitySubstitution
 from flask import Flask, request, render_template
 from flask import redirect
 from flask import url_for
@@ -29,6 +30,8 @@ limiter = Limiter(
 session_limit = 7
 paragraph_limit = 3
 
+HTML_ENTITY_TO_CHARACTER = {"&{};".format(k): v for k, v in EntitySubstitution.HTML_ENTITY_TO_CHARACTER.items()}
+HTML_ENTITY_TO_CHARACTER_RE = re.compile(r'|'.join(HTML_ENTITY_TO_CHARACTER.keys()))
 
 @app.template_filter('book_link')
 def book_link(abbr):
@@ -164,11 +167,12 @@ def get_sentence_fragments(paragraph):
         raw_sentence = raw_sentence.strip('\n')
 
         if 'class="match ' in raw_sentence:
-            sentence_in_paragraph_tag = get_deepest_match(paragraph_bs, raw_sentence)
+            sentence_wout_entities = HTML_ENTITY_TO_CHARACTER_RE.sub(lambda x: HTML_ENTITY_TO_CHARACTER[x.group()], raw_sentence)
+            sentence_in_paragraph_tag = get_deepest_match(paragraph_bs, sentence_wout_entities)
             term_in_sentence_tag = get_deepest_match(sentence_in_paragraph_tag, 'class="match ')
             is_italics = any(tag.name == 'em' for tag in term_in_sentence_tag.parents)
 
-            sentence_bs = BeautifulSoup(raw_sentence, "lxml")
+            sentence_bs = BeautifulSoup(sentence_wout_entities, "lxml")
             sentence = str(sentence_bs.body)
             sentence = re.sub(r'^<body>|</body>$', r'', sentence)
             sentence = re.sub(r'^<p>|</p>$', r'', sentence)
