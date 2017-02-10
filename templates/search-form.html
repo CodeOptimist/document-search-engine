@@ -3,7 +3,7 @@
 <head>
     <meta name="robots" content="nofollow" />
     <meta name="description" content="A search engine for the Seth material as dictated by Jane Roberts and transcribed by Robert F. Butts." />
-	<title>Seth corpus search</title>
+	<title>{% if query %}{{ query }} - {% endif %}Seth corpus search</title>
     <script>
         function filterBook(abbr) {
             var abbr_l = abbr.toLowerCase();
@@ -44,8 +44,12 @@
             font-size: 0.9em;
         }
 
-        h1 a, .examples a, #books a, .display-toggle, .omission {text-decoration: none;}
+        #pagination a, h1 a, .examples a, #books a, .display-toggle, .omission {text-decoration: none;}
         h1 a, .display-toggle, .direct-link, .key-term, .omission {color: inherit;}
+        #pagination {
+            text-align: center;
+            margin-bottom: 3em;
+        }
 
         #query {width: 30em;}
         .omission {padding: 0 0.2em;}
@@ -102,6 +106,7 @@ There are <a href="https://www.amazon.com/Jane%20Roberts/e/B000APH242/?rh=n%3A28
 <p>Book content copyright © Laurel Davies-Butts</p>
 {% autoescape false %}
 {{ result }}
+<h3 id="pagination">{{  pagination }}</h3>
 {% endautoescape %}
 </body>
 {% if scroll %}
