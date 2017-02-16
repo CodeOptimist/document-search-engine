@@ -198,13 +198,14 @@ def get_sentence_fragments(paragraph):
 
 def get_deepest_match(paragraph_soup, sentence_soup):
     end_punctuation_re = r'(^\W+|\W+$)'
-    html_strings = re.sub(end_punctuation_re, '', ''.join(sentence_soup.stripped_strings))
+    html_strings = re.sub(end_punctuation_re, '', ''.join(sentence_soup.strings))
 
     result = None
     for tag in paragraph_soup.find_all(True):
-        tag_strings = re.sub(end_punctuation_re, '', ''.join(tag.stripped_strings))
+        tag_strings = re.sub(end_punctuation_re, '', ''.join(tag.strings))
         if html_strings in tag_strings:
             result = tag
+
     assert result
     return result
 
