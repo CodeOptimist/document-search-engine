@@ -88,6 +88,7 @@ def add_key_terms(ix):
         fields['key_terms'] = final_terms
         fields['stemmed'] = fields['key_terms_content']
         fields['exact'] = fields['key_terms_content']
+        fields['common'] = fields['key_terms_content']
         del fields['key_terms_content']
         w.delete_document(doc_num)
         w.add_document(**fields)
@@ -129,7 +130,8 @@ search_schema = Schema(book=ID(stored=True),
                        heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
                        session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
                        exact=TEXT(stored=True, analyzer=StandardAnalyzer(stoplist=None)),
-                       stemmed=TEXT(stored=True, analyzer=StemmingAnalyzer(stoplist=None)))
+                       stemmed=TEXT(stored=True, analyzer=StemmingAnalyzer()),
+                       common=TEXT(stored=True, analyzer=StemmingAnalyzer(stoplist=None)))
 
 
 def create_index(index_dir):
@@ -146,7 +148,8 @@ def create_index(index_dir):
                     heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
                     exact=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, stoplist=None)),
-                    stemmed=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None)))
+                    stemmed=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re)),
+                    common=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None)))
 
     ix = index.create_in(index_dir, schema)
 

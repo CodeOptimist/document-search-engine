@@ -46,7 +46,8 @@ def urlize(s, in_href=False, undo=False):
         s = s.replace('\'', '"')
         s = urllib.parse.unquote_plus(s)
     else:
-        s = s.replace('"', '\'')
+        # no undo for single quote to space since that is how Whoosh itself treats apostrophes
+        s = s.replace("'", ' ').replace('"', '\'')
         # valid path component chars are: ()':* http://stackoverflow.com/a/2375597/879
         # but browsers seem okay with []{} also
         safe = '[]{}\'()*:'
@@ -65,7 +66,7 @@ def search_form(url_query=None, url_num=None):
     if request.method == 'POST':
         url_query = urlize(request.form['query'].strip())
         if url_query:
-            return redirect(url_for('search_form', url_query=url_query, url_num=url_num).replace('%27', "'"))
+            return redirect(url_for('search_form', url_query=url_query, url_num=None).replace('%27', "'"))
     if not url_query:
         return render_template("search-form.html", books=Books.indexed)
 
@@ -76,7 +77,7 @@ def search_form(url_query=None, url_num=None):
         if isinstance(qp, _NullQuery):
             return render_template("search-form.html", books=Books.indexed)
 
-        is_content_query = 'stemmed:' in str(qp) or 'exact:' in str(qp)
+        is_content_query = any(x in str(qp) for x in ('stemmed:', 'exact:', 'common:'))
         if is_content_query:
             try:
                 num = int(url_num or 0)
@@ -100,7 +101,13 @@ def search_form(url_query=None, url_num=None):
             output = ['<h2 id="results">Results {} to {} of {} for {}</h2>'.format(page.offset + 1, page.offset + page.pagelen, page.total, qp)]
 
         for h_idx, hit in enumerate(page):
-            highlights = hit.highlights('exact' if 'exact:' in str(qp) else 'stemmed', top=50 if page.total == 1 else paragraph_limit)
+            if 'exact:' in str(qp):
+                highlight_field = 'exact'
+            elif 'common:' in str(qp):
+                highlight_field = 'common'
+            else:
+                highlight_field = 'stemmed'
+            highlights = hit.highlights(highlight_field, top=50 if page.total == 1 else paragraph_limit)
 
             output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')"> ► </a>'.format(h_idx))
 
