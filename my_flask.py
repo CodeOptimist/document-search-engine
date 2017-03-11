@@ -46,6 +46,8 @@ def urlize(s, in_href=False, undo=False):
         s = s.replace('\'', '"')
         s = urllib.parse.unquote_plus(s)
     else:
+        # let's make book names lowercase (no undo)
+        s = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), s)
         # no undo for single quote to space since that is how Whoosh itself treats apostrophes
         s = s.replace("'", ' ').replace('"', '\'')
         # valid path component chars are: ()':* http://stackoverflow.com/a/2375597/879
@@ -61,7 +63,8 @@ def urlize(s, in_href=False, undo=False):
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/q/', methods=['GET', 'POST'])
 @app.route('/q/<url_query>/', methods=['GET', 'POST'])
-@app.route('/q/<url_query>/<url_num>', methods=['GET', 'POST'])
+@app.route('/q/<url_query>/s/', methods=['GET', 'POST'])
+@app.route('/q/<url_query>/<url_num>/', methods=['GET', 'POST'])
 def search_form(url_query=None, url_num=None):
     if request.method == 'POST':
         url_query = urlize(request.form['query'].strip())
@@ -72,7 +75,19 @@ def search_form(url_query=None, url_num=None):
 
     query = urlize(url_query, undo=True)
     with ix.searcher() as searcher:
-        query = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), query)
+        is_single = request.base_url.endswith('/s/')
+        if is_single:
+            shorter_query = re.sub(r'\bsession:"(\d+)[^"]+"', r'session:\1', query)
+            if shorter_query != query:
+                qp = QueryParser('stemmed', my_index.search_schema).parse(shorter_query)
+                results = searcher.search(qp, limit=2)
+                if results.scored_length() == 1:
+                    query = shorter_query
+
+            url = url_for('search_form', url_query=urlize(query), url_num=None).replace('%27', "'")
+            url = re.sub(r'/s/$', r'/', url)
+            return redirect(url)
+
         qp = QueryParser('stemmed', my_index.search_schema).parse(query)
         if isinstance(qp, _NullQuery):
             return render_template("search-form.html", books=Books.indexed)
@@ -164,12 +179,12 @@ def get_single_result_link(hit, query):
         session = re.sub(r'[^\w’]', ' ', hit['session'])
         session = re.sub(r'\s+', ' ', session).strip()
         session = re.sub(r'^session ', r'', session, flags=re.IGNORECASE)
-        result = "/q/{}/".format(urlize('session:"{}" {}'.format(session, query), in_href=True))
+        result = "/q/{}/s/".format(urlize('session:"{}" {}'.format(session, query), in_href=True))
     else:
         # a bit hackish, in this case 'short' happens to be only the heading
         heading = re.sub(r'[^\w’]', ' ', hit['short'])
         heading = re.sub(r'\s+', ' ', heading).strip()
-        result = "/q/{}/".format(urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, query), in_href=True))
+        result = "/q/{}/s/".format(urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, query), in_href=True))
     return result
 
 
