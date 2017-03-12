@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+    <ShortName>Seth corpus</ShortName>
+    <Description>Seth (Jane Roberts) search engine</Description>
+    <Url type="text/html" method="get" template="http://search.sethtalks.com/os/{searchTerms}"/>
+</OpenSearchDescription>

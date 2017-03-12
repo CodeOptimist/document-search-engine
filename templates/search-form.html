@@ -3,7 +3,8 @@
 <head>
     <meta name="robots" content="nofollow" />
     <meta name="description" content="A search engine for the Seth material as dictated by Jane Roberts and transcribed by Robert F. Butts." />
-	<title>{% if query %}{{ query }} - {% endif %}Seth corpus search</title>
+    <link type="application/opensearchdescription+xml" rel="search" href="/static/sethcorpus.osdd" />
+    <title>{% if query %}{{ query }} - {% endif %}Seth search engine</title>
     <script>
         function filterBook(abbr) {
             var abbr_l = abbr.toLowerCase();
@@ -70,7 +71,7 @@
     </style>
 </head>
 <body>
-<h1><a href="/">Seth corpus search</a></h1>
+<h1><a href="/">Seth search engine</a></h1>
 <p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
 <div><p>Example searches:</p>
 <ul class="examples">

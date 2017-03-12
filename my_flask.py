@@ -6,7 +6,6 @@ import urllib.parse
 
 from CommonMark import commonmark
 from bs4 import BeautifulSoup
-from bs4.dammit import EntitySubstitution
 from flask import Flask, request, render_template
 from flask import redirect
 from flask import url_for
@@ -40,6 +39,11 @@ def example_link(q):
     return '<a href="/q/{}/">{}</a>'.format(urlize(q, in_href=True), q)
 
 
+def pretty_redirect(s):
+    s = urllib.parse.unquote(s)
+    return redirect(s)
+
+
 def urlize(s, in_href=False, undo=False):
     # print("Begin: {}".format(s))
     if undo:
@@ -63,13 +67,17 @@ def urlize(s, in_href=False, undo=False):
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/q/', methods=['GET', 'POST'])
 @app.route('/q/<url_query>/', methods=['GET', 'POST'])
+@app.route('/os/<os_query>/', methods=['GET', 'POST'])
 @app.route('/q/<url_query>/s/', methods=['GET', 'POST'])
 @app.route('/q/<url_query>/<url_num>/', methods=['GET', 'POST'])
-def search_form(url_query=None, url_num=None):
+def search_form(url_query=None, url_num=None, os_query=None):
+    if os_query:
+        return pretty_redirect(url_for('search_form', url_query=urlize(os_query)))
+
     if request.method == 'POST':
         url_query = urlize(request.form['query'].strip())
         if url_query:
-            return redirect(url_for('search_form', url_query=url_query, url_num=None).replace('%27', "'"))
+            return pretty_redirect(url_for('search_form', url_query=url_query))
     if not url_query:
         return render_template("search-form.html", books=Books.indexed)
 
@@ -84,9 +92,9 @@ def search_form(url_query=None, url_num=None):
                 if results.scored_length() == 1:
                     query = shorter_query
 
-            url = url_for('search_form', url_query=urlize(query), url_num=None).replace('%27', "'")
+            url = url_for('search_form', url_query=urlize(query))
             url = re.sub(r'/s/$', r'/', url)
-            return redirect(url)
+            return pretty_redirect(url)
 
         qp = QueryParser('stemmed', my_index.search_schema).parse(query)
         if isinstance(qp, _NullQuery):
@@ -99,7 +107,7 @@ def search_form(url_query=None, url_num=None):
                 if num < 0:
                     raise ValueError
             except ValueError:
-                return redirect(url_for('search_form', url_query=url_query, url_num=None).replace('%27', "'"))
+                return pretty_redirect(url_for('search_form', url_query=url_query))
             pagenum = int(num / sessions_per_page) + 1
             page = searcher.search_page(qp, pagenum, pagelen=sessions_per_page)
         else:
@@ -166,8 +174,8 @@ def search_form(url_query=None, url_num=None):
             output.append("<br />")
         result = '\n'.join(output)
 
-        previous = '<a href="/q/{}/{}">← Previous</a>'.format(url_query, page.offset - sessions_per_page if page.offset > sessions_per_page else '') if page.offset >= page.pagelen else ''
-        next = '<a href="/q/{}/{}">Next →</a>'.format(url_query, page.offset + page.pagelen) if page.total - page.offset - page.pagelen > 0 else ''
+        previous = '<a href="/q/{}/{}">← Previous</a>'.format(url_query, str(page.offset - sessions_per_page) + '/' if page.offset > sessions_per_page else '') if page.offset >= page.pagelen else ''
+        next = '<a href="/q/{}/{}">Next →</a>'.format(url_query, str(page.offset + page.pagelen) + '/') if page.total - page.offset - page.pagelen > 0 else ''
         pagination = '{} &nbsp; {}'.format(previous, next)
 
         scroll = ('session:' in str(qp) and page.total == 1) or url_num is not None
