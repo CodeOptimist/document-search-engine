@@ -132,13 +132,14 @@ def search_form(url_query=None, url_num=None, os_query=None):
                 highlight_field = 'stemmed'
             highlights = hit.highlights(highlight_field, top=50 if page.total == 1 else paragraph_limit)
 
-            output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')"> ► </a>'.format(h_idx))
+            output.append('<div class="hit">')
+            output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')">►</a>'.format(h_idx))
 
             direct_link = get_single_result_link(hit, query)
             if page.total > 1 and is_content_query:
-                output.append('<a href="{1}" class="direct-link">{0[book_abbr]} {0[short]}</a>'.format(hit, direct_link))
+                output.append('<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>'.format(hit, direct_link))
             else:
-                output.append('{0[book_abbr]} {0[short]}'.format(hit))
+                output.append('<span class="heading">{0[book_abbr]} {0[short]}</span>'.format(hit))
 
             output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, hit['book_abbr'].lower()))
             output.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
@@ -154,24 +155,26 @@ def search_form(url_query=None, url_num=None, os_query=None):
                 output.append("<br />")
                 continue
 
-            output.append("<ul>")
+            output.append('<ul class="excerpts">')
             for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
                 paragraph = commonmark(cm_paragraph)
 
                 # if False:
                 if page.pagenum == 1 and h_idx == 0 and p_idx < paragraph_limit:
                     excerpt = paragraph
+                    output.append("<li>{}</li>".format(excerpt))
                 else:
                     if p_idx == paragraph_limit:
-                        output.append("</ul><hr><ul>")
+                        output.append("</ul><hr>")
+                        output.append('<ul class="excerpts">')
                     sentences = get_sentence_fragments(paragraph)
                     excerpt = '<a href="{}" class="omission"> [...] </a>'.format(direct_link).join(sentences)
-                output.append("<li><p>{}</p></li>".format(excerpt))
+                    output.append("<li><p>{}</p></li>".format(excerpt))
             output.append("</ul>")
+            output.append("</div>")
 
             # if result_len > 1 and h_idx == 0:
             #     output.append("<hr>")
-            output.append("<br />")
         result = '\n'.join(output)
 
         previous = '<a href="/q/{}/{}">← Previous</a>'.format(url_query, str(page.offset - sessions_per_page) + '/' if page.offset > sessions_per_page else '') if page.offset >= page.pagelen else ''

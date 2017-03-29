@@ -31,12 +31,38 @@
             e = document.getElementById(id);
             if (e.style.display == 'none') {
                 e.style.removeProperty('display');
-                self.innerText = ' ▼ ';
+                self.innerText = '▼';
             } else {
                 e.style.display = 'none';
-                self.innerText = ' ► ';
+                self.innerText = '►';
             }
         }
+
+        function findAncestor(el, cls) {
+            while ((el = el.parentElement) && !el.classList.contains(cls));
+            return el;
+        }
+
+        function addCitation(event) {
+            if (!event.clipboardData)
+                return;
+
+            var selection = window.getSelection();
+            var excerpts = findAncestor(selection.anchorNode, "excerpts");
+            if (!excerpts)
+                return;
+
+            event.preventDefault();
+            var heading = excerpts.parentNode.childNodes[3].innerHTML;
+
+            var copyText = ("" + selection).trim();
+            if (copyText.indexOf("\n\n") != -1)
+                copyText += "\n";
+            copyText += "\n—" + heading;
+            event.clipboardData.setData('Text', copyText);
+        }
+
+        document.addEventListener('copy', addCitation);
     </script>
     <style>
         body {
@@ -45,8 +71,10 @@
             font-size: 0.9em;
         }
 
-        #pagination a, h1 a, .examples a, #books a, .display-toggle, .omission {text-decoration: none;}
-        h1 a, .display-toggle, .direct-link, .key-term, .omission {color: inherit;}
+        .hit {margin-bottom: 1.5em;}
+
+        #pagination a, h1 a, .examples a, #books a, .omission {text-decoration: none;}
+        h1 a {color: inherit;}
         #pagination {
             text-align: center;
             margin-bottom: 3em;
@@ -116,4 +144,13 @@ There are <a href="https://www.amazon.com/Jane%20Roberts/e/B000APH242/?rh=n%3A28
         document.getElementById('results').scrollIntoView();
     </script>
 {% endif %}
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-96378100-1', 'auto');
+  ga('send', 'pageview');
+</script>
 </html>

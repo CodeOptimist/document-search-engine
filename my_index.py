@@ -131,7 +131,8 @@ search_schema = Schema(book=ID(stored=True),
                        session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
                        exact=TEXT(stored=True, analyzer=StandardAnalyzer(stoplist=None)),
                        stemmed=TEXT(stored=True, analyzer=StemmingAnalyzer()),
-                       common=TEXT(stored=True, analyzer=StemmingAnalyzer(stoplist=None)))
+                       common=TEXT(stored=True, analyzer=StemmingAnalyzer(stoplist=None)),
+                       )
 
 
 def create_index(index_dir):
@@ -149,7 +150,8 @@ def create_index(index_dir):
                     session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
                     exact=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, stoplist=None)),
                     stemmed=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re)),
-                    common=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None)))
+                    common=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None)),
+                    )
 
     ix = index.create_in(index_dir, schema)
 
