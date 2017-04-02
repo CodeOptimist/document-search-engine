@@ -168,7 +168,10 @@ def search_form(url_query=None, url_num=None, os_query=None):
                         output.append("</ul><hr>")
                         output.append('<ul class="excerpts">')
                     sentences = get_sentence_fragments(paragraph)
-                    excerpt = '<a href="{}" class="omission"> [...] </a>'.format(direct_link).join(sentences)
+                    if page.total > 1:
+                        excerpt = '<a href="{}" class="omission"> [...] </a>'.format(direct_link).join(sentences)
+                    else:
+                        excerpt = ' [...] '.join(sentences)
                     output.append("<li><p>{}</p></li>".format(excerpt))
             output.append("</ul>")
             output.append("</div>")
@@ -216,6 +219,7 @@ def get_sentence_fragments(paragraph):
             sentence = str(sentence_soup.body)
             sentence = re.sub(r'^<body>|</body>$', r'', sentence)
             sentence = re.sub(r'^<p>|</p>$', r'', sentence)
+            sentence = re.sub(r'^<li>|</li>$', r'', sentence)
 
             if is_italics and not sentence.startswith('<em>'):
                 sentence = "<em>{}</em>".format(sentence)
