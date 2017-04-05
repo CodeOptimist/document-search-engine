@@ -55,9 +55,9 @@
             event.preventDefault();
             var heading = excerpts.parentNode.childNodes[3].innerHTML;
 
-            var copyText = ("" + selection).trim();
+            var copyText = selection.toString().trim().replace(/  +/g, " ");
             if (copyText.indexOf("\n\n") != -1)
-                copyText += "\n";
+                copyText = "• " + copyText.replace(/(\n\n)/g, "$1• ") + "\n";
             copyText += "\n—" + heading;
             event.clipboardData.setData('Text', copyText);
         }
