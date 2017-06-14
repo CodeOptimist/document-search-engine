@@ -141,7 +141,8 @@ def search_form(url_query=None, url_num=None, os_query=None):
             else:
                 output.append('<span class="heading">{0[book_abbr]} {0[short]}</span>'.format(hit))
 
-            output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, hit['book_abbr'].lower()))
+            icon = re.sub(r'(tes|tps)\d', r'\1', hit['book_abbr'].lower())
+            output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, icon))
             output.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
 
             for key_term in hit['key_terms'][:5]:
