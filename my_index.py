@@ -102,6 +102,7 @@ def title(_text):
         text = re.sub(r'\bEsp\b', r'ESP', text)
         text = re.sub(r'\bRfb\b', r'RFB', text)
         text = re.sub(r'\bSeth Ii\b', r'Seth II', text)
+        text = re.sub(r'(\d [AP])m\b', r'\1M', text)
         text = re.sub(r"(\w[’'])S\b", r'\1s', text)
     return text
 
