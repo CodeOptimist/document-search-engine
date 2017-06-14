@@ -74,8 +74,8 @@ def add_key_terms(ix):
             last_book = fields['book_name']
             print(last_book)
         m = re.search(r'session (\d+)', fields['session'], flags=re.IGNORECASE)
-        session_num = m.group(1) if m else None
-        key_terms = [k for k, v in s.key_terms([doc_num], 'key_terms_content', numterms=10) if k != session_num]
+        is_session_num = lambda k: re.match(r'{0}(st|nd|rd|th)?'.format(m.group(1)), k) if m else False
+        key_terms = [k for k, v in s.key_terms([doc_num], 'key_terms_content', numterms=10) if not is_session_num(k)]
         stemmed = [t.text for t in stemmer(' '.join(key_terms))]
 
         final_terms = []
