@@ -9,8 +9,6 @@ from bs4 import BeautifulSoup
 from flask import Flask, request, render_template
 from flask import redirect
 from flask import url_for
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from whoosh import highlight, index
 from whoosh.qparser import QueryParser
 # noinspection PyProtectedMember
@@ -21,11 +19,6 @@ from books import Books
 from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer
 
 app = Flask(__name__)
-limiter = Limiter(
-    app,
-    key_func=get_remote_address,
-    application_limits=["30 per minute", "200 per hour", "1000 per day"]
-)
 sessions_per_page = 10
 paragraph_limit = 3
 
