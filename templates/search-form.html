@@ -75,7 +75,7 @@
 
         .hit {margin-bottom: 1.5em;}
 
-        #pagination a, h1 a, .examples a, #books a, .omission {text-decoration: none;}
+        #pagination a, h1 a, .examples a, .books a, .omission {text-decoration: none;}
         h1 a {color: inherit;}
         #pagination {
             text-align: center;
@@ -103,7 +103,7 @@
 <body>
 <h1><a href="/">Seth search engine</a></h1>
 <p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
-<div><p>Example searches:</p>
+<div><p>Example searches (hover for explanation):</p>
 <ul class="examples">
     <li>{{ example('beer OR wine', 'either word')|safe }}</li>
     <li>{{ example('cat mouse', 'both words')|safe }}</li>
@@ -115,7 +115,6 @@
     <li>{{ example('NOT book:wth exercise', '"exercise" excluding the book Way Toward Health')|safe }}</li>
     <li>{{ example('heading:(essay 4) mind', 'both words in heading, "mind" in sessions')|safe }}</li>
     <li>{{ example('"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)', 'phrases in multiple books')|safe }}</li>
-
 </ul>
 <p>Leave out the search words for casual browsing:</p>
 <ul class="examples">
@@ -128,8 +127,13 @@
 </ul>
 </div>
 <p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
-<p id="books">Individual books: {{ books|map(attribute='abbr')|map('book_link')|join(', ')|safe }}</p>
-<p>Multiple volumes: {{ ['UR?', 'DEaVF?', 'TES?', 'TPS?']|map('book_link')|join(', ')|safe }}</p>
+<p class="books">Individual books: {{ books|map('book_link')|join(', ')|safe }}</p>
+<p class="books">Multiple volumes: {{ [
+    ('UR?', "The \"Unknown\" Reality"),
+    ('DEaVF?', "Dreams, \"Evolution\", and Value Fulfillment"),
+    ('TES?', "The Early Sessions"),
+    ('TPS?', "The Personal Sessions")
+    ]|map('volumes_link')|join(', ')|safe }}</p>
 <form method="post">
     <!--suppress SillyAssignmentJS -->
     <input {% if not query %}autofocus{% endif %} required type="text" id="query" name="query" title="query" onfocus="this.value = this.value" value="{{ query }}">

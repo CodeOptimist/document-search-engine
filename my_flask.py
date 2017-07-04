@@ -23,9 +23,17 @@ app = Flask(__name__)
 sessions_per_page = 10
 paragraph_limit = 3
 
+
+@app.template_filter('volumes_link')
+def book_link_html(tpl):
+    abbr, name = tpl
+    return """<a href="javascript:void()" title="{1}" onclick="filterBook('{0}')">{0}</a>""".format(abbr, html.escape(name))
+
+
 @app.template_filter('book_link')
-def book_link(abbr):
-    return """<a href="javascript:void()" onclick="filterBook('{0}')">{0}</a>""".format(abbr)
+def book_link(book):
+    return book_link_html((book['abbr'], book['name']))
+
 
 @app.context_processor
 def example():
