@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import urllib.parse
+import html
 
 from CommonMark import commonmark
 from bs4 import BeautifulSoup
@@ -26,11 +27,11 @@ paragraph_limit = 3
 def book_link(abbr):
     return """<a href="javascript:void()" onclick="filterBook('{0}')">{0}</a>""".format(abbr)
 
-
-@app.template_filter('example')
-def example_link(q):
-    return '<a href="/q/{}/">{}</a>'.format(urlize(q, in_href=True), q)
-
+@app.context_processor
+def example():
+    def _example(q, desc):
+        return '<a href="/q/{}/" title="{}">{}</a>'.format(urlize(q, in_href=True), html.escape(desc), q)
+    return dict(example=_example)
 
 def pretty_redirect(s):
     s = urllib.parse.unquote(s)

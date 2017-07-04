@@ -10,9 +10,9 @@
             var abbr_l = abbr.toLowerCase();
             var q = document.getElementById('query').value;
 
-            var book_re = new RegExp("\\bbook:" + abbr_l + "\\b");
-            var not_book_re = new RegExp("\\bNOT\\s+book:" + abbr_l + "\\b");
-            var any_book_re = new RegExp("\\bbook:\\w+");
+            var book_re = new RegExp("\\bbook:" + abbr_l + "\\b\\??");
+            var not_book_re = new RegExp("\\bNOT\\s+book:" + abbr_l + "\\b\\??");
+            var any_book_re = new RegExp("\\bbook:\\w+\\??");
 
             if (not_book_re.test(q)) {
                 new_q = q.replace(not_book_re, "book:" + abbr_l)
@@ -105,29 +105,31 @@
 <p><a href="http://sethtalks.com/t/seth-search-engine/513/">Forum post for updates</a></p>
 <div><p>Example searches:</p>
 <ul class="examples">
-    <li>{{ 'beer OR wine'|example|safe }}</li>
-    <li>{{ 'cat mouse'|example|safe }}</li>
-    <li>{{ '"conscious mind"'|example|safe }}</li>
-    <li>{{ 'exact:thankful'|example|safe }}</li>
-    <li>{{ '"mind matter"~3'|example|safe }}</li>
-    <li>{{ 'book:tes? exercise'|example|safe }}</li>
-    <li>{{ 'common:"we are seth"'|example|safe }}</li>
-    <li>{{ 'NOT book:wth exercise'|example|safe }}</li>
-    <li>{{ 'heading:(essay 4) mind'|example|safe }}</li>
-    <li>{{ '"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)'|example|safe }}</li>
+    <li>{{ example('beer OR wine', 'either word')|safe }}</li>
+    <li>{{ example('cat mouse', 'both words')|safe }}</li>
+    <li>{{ example('"conscious mind"', 'the complete phrase')|safe }}</li>
+    <li>{{ example('exact:thankful', 'the exact word (not stemmed to "thank")')|safe }}</li>
+    <li>{{ example('"mind matter"~3', 'the complete phrase, but allows a distance between the words')|safe }}</li>
+    <li>{{ example('book:tes? exercise', '"exercise" in every TES book')|safe }}</li>
+    <li>{{ example('common:"we are seth"', 'keeps the common words "we" and "are"')|safe }}</li>
+    <li>{{ example('NOT book:wth exercise', '"exercise" excluding the book Way Toward Health')|safe }}</li>
+    <li>{{ example('heading:(essay 4) mind', 'both words in heading, "mind" in sessions')|safe }}</li>
+    <li>{{ example('"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)', 'phrases in multiple books')|safe }}</li>
+
 </ul>
 <p>Leave out the search words for casual browsing:</p>
 <ul class="examples">
-    <li>{{ 'book:tma'|example|safe }}</li>
-    <li>{{ 'heading:dreams'|example|safe }}</li>
-    <li>{{ 'heading:"chapter 16"'|example|safe }}</li>
-    <li>{{ 'session:636'|example|safe }}</li>
-    <li>{{ 'session:(January 1977)'|example|safe }}</li>
-    <li>{{ 'book:tma heading:*teen'|example|safe }}</li>
+    <li>{{ example('book:tma', 'list of sessions in The Magical Approach')|safe }}</li>
+    <li>{{ example('heading:dreams', 'any heading containing "dreams" in any book')|safe }}</li>
+    <li>{{ example('heading:"chapter 16"', 'complete phrase in heading')|safe }}</li>
+    <li>{{ example('session:636', 'number in session title')|safe }}</li>
+    <li>{{ example('session:(January 1977)', 'both words in session title')|safe }}</li>
+    <li>{{ example('book:tma heading:*teen', 'headings ending in "teen" in The Magical Approach')|safe }}</li>
 </ul>
 </div>
 <p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
-<p id="books">Current books: {{ books|map(attribute='abbr')|map('book_link')|join(', ')|safe }}</p>
+<p id="books">Individual books: {{ books|map(attribute='abbr')|map('book_link')|join(', ')|safe }}</p>
+<p>Multiple volumes: {{ ['UR?', 'DEaVF?', 'TES?', 'TPS?']|map('book_link')|join(', ')|safe }}</p>
 <form method="post">
     <!--suppress SillyAssignmentJS -->
     <input {% if not query %}autofocus{% endif %} required type="text" id="query" name="query" title="query" onfocus="this.value = this.value" value="{{ query }}">
