@@ -1,3 +1,4 @@
+# coding=utf-8
 import argparse
 import os
 import re
@@ -83,6 +84,9 @@ def search_form(url_query=None, url_num=None, os_query=None):
     if not url_query:
         return render_template("search-form.html", books=Books.indexed)
 
+    # in a GET the ? is stripped, even if it's before a /, so must always use %3F for the GET url
+    # (but flask here shows it as ? even though it keeps e.g. + for spaces, so we put it back to %3F)
+    url_query = url_query.replace('?', '%3F')
     query = urlize(url_query, undo=True)
     with ix.searcher() as searcher:
         is_single = request.base_url.endswith('/s/')
