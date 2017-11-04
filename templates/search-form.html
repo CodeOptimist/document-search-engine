@@ -3,6 +3,7 @@
 <head>
     <meta name="robots" content="nofollow" />
     <meta name="description" content="A search engine for the Seth material as dictated by Jane Roberts and transcribed by Robert F. Butts." />
+    {% if description %}<meta property="og:description" content="{{ description }}" />{% endif %}
     <link type="application/opensearchdescription+xml" rel="search" href="/static/sethcorpus.osdd" />
     <title>{% if query %}{{ query }} - {% endif %}Seth search engine</title>
     <script>
@@ -132,7 +133,8 @@
     ('UR?', "The \"Unknown\" Reality"),
     ('DEaVF?', "Dreams, \"Evolution\", and Value Fulfillment"),
     ('TES?', "The Early Sessions"),
-    ('TPS?', "The Personal Sessions")
+    ('TPS?', "The Personal Sessions"),
+    ('TECS?', "The Early Class Sessions"),
     ]|map('volumes_link')|join(', ')|safe }}</p>
 <form method="post">
     <!--suppress SillyAssignmentJS -->

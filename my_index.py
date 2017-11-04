@@ -174,6 +174,7 @@ def create_index(index_dir):
             'book': book['abbr'].lower(),
         }
 
+        i = 0
         heading_tiers = [{'short': '', 'long': ''}] * 3
         carry_over_header = None
         headers = list(filter(None, book['headers_re'].split(text)[1:]))
@@ -196,6 +197,8 @@ def create_index(index_dir):
                 continue
 
             add_document(writer, d, heading_tiers, content)
+            i += 1
+        print(i)
 
     writer.commit()
     return ix

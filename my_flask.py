@@ -129,6 +129,7 @@ def search_form(url_query=None, url_num=None, os_query=None):
         else:
             output = ['<h2 id="results">Results {} to {} of {} for {}</h2>'.format(page.offset + 1, page.offset + page.pagelen, page.total, qp)]
 
+        description = None
         for h_idx, hit in enumerate(page):
             if 'exact:' in str(qp):
                 highlight_field = 'exact'
@@ -147,7 +148,7 @@ def search_form(url_query=None, url_num=None, os_query=None):
             else:
                 output.append('<span class="heading">{0[book_abbr]} {0[short]}</span>'.format(hit))
 
-            icon = re.sub(r'(tes|tps)\d', r'\1', hit['book_abbr'].lower())
+            icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
             output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, icon))
             output.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
 
@@ -170,6 +171,8 @@ def search_form(url_query=None, url_num=None, os_query=None):
                 if page.pagenum == 1 and h_idx == 0 and p_idx < paragraph_limit:
                     excerpt = paragraph
                     output.append("<li>{}</li>".format(excerpt))
+                    if p_idx == 0:
+                        description = BeautifulSoup(excerpt, 'lxml').text.strip()
                 else:
                     if p_idx == paragraph_limit:
                         output.append("</ul><hr>")
@@ -192,7 +195,7 @@ def search_form(url_query=None, url_num=None, os_query=None):
         pagination = '{} &nbsp; {}'.format(previous, next)
 
         scroll = ('session:' in str(qp) and page.total == 1) or url_num is not None
-        return render_template("search-form.html", books=Books.indexed, query=query, result=result, pagination=pagination, scroll=scroll)
+        return render_template("search-form.html", books=Books.indexed, query=query, description=description, result=result, pagination=pagination, scroll=scroll)
 
 
 def get_single_result_link(hit, query):
