@@ -14,15 +14,18 @@ from flask import url_for
 from whoosh import highlight, index
 from whoosh.qparser import QueryParser
 # noinspection PyProtectedMember
-from whoosh.query.qcore import _NullQuery
+from whoosh.query.qcore import NullQuery
 
 import my_index
 from books import Books
 from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer
 
 app = Flask(__name__)
-sessions_per_page = 10
-paragraph_limit = 3
+sessions_per_content_page = 10
+sessions_per_listing_page = 150
+multiple_result_paragraph_limit = 3
+single_result_paragraph_limit = 50    # effectively ALL of them, I would think
+default_field = 'stemmed'
 
 
 @app.template_filter('volumes_link')
@@ -37,10 +40,11 @@ def book_link(book):
 
 
 @app.context_processor
-def example():
-    def _example(q, desc):
+def template_functions():
+    def example(q, desc):
         return '<a href="/q/{}/" title="{}">{}</a>'.format(urlize(q, in_href=True), html.escape(desc), q)
-    return dict(example=_example)
+    return dict(example=example)
+
 
 def pretty_redirect(s):
     s = urllib.parse.unquote(s)
@@ -69,14 +73,15 @@ def urlize(s, in_href=False, undo=False):
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/q/', methods=['GET', 'POST'])
-@app.route('/q/<url_query>/', methods=['GET', 'POST'])
 @app.route('/os/<os_query>/', methods=['GET', 'POST'])
+@app.route('/q/<url_query>/', methods=['GET', 'POST'])
 @app.route('/q/<url_query>/s/', methods=['GET', 'POST'])
 @app.route('/q/<url_query>/<url_num>/', methods=['GET', 'POST'])
-def search_form(url_query=None, url_num=None, os_query=None):
+def search_form(os_query=None, url_query=None, url_num=None):
     if os_query:
         return pretty_redirect(url_for('search_form', url_query=urlize(os_query)))
 
+    # redirect POST to GET
     if request.method == 'POST':
         url_query = urlize(request.form['query'].strip())
         if url_query:
@@ -84,118 +89,153 @@ def search_form(url_query=None, url_num=None, os_query=None):
     if not url_query:
         return render_template("search-form.html", books=Books.indexed)
 
-    # in a GET the ? is stripped, even if it's before a /, so must always use %3F for the GET url
-    # (but flask here shows it as ? even though it keeps e.g. + for spaces, so we put it back to %3F)
+    return search_get(url_query, url_num)
+
+
+def search_get(url_query, url_num):
+    # in a GET the ? is stripped, even if it's before a /, so must always use %3F for the GET url (urlize())
+    # but oddly enough flask here shows it as ? even though it keeps e.g. + for spaces, so we put it back to %3F
     url_query = url_query.replace('?', '%3F')
     query = urlize(url_query, undo=True)
     with ix.searcher() as searcher:
-        is_single = request.base_url.endswith('/s/')
-        if is_single:
-            shorter_query = re.sub(r'\bsession:"(\d+)[^"]+"', r'session:\1', query)
-            if shorter_query != query:
-                qp = QueryParser('stemmed', my_index.search_schema).parse(shorter_query)
-                results = searcher.search(qp, limit=2)
-                if results.scored_length() == 1:
-                    query = shorter_query
+        to_shorten = request.base_url.endswith('/s/')
+        if to_shorten:
+            return pretty_redirect(get_short_url(searcher, query))
 
-            url = url_for('search_form', url_query=urlize(query))
-            url = re.sub(r'/s/$', r'/', url)
-            return pretty_redirect(url)
+        qp = QueryParser(default_field, my_index.search_schema).parse(query)
+        if isinstance(qp, type(NullQuery)):
+            return pretty_redirect(re.sub(r'/q/$', r'/', url_for('search_form')))
 
-        qp = QueryParser('stemmed', my_index.search_schema).parse(query)
-        if isinstance(qp, _NullQuery):
-            return render_template("search-form.html", books=Books.indexed)
+        highlight_field = None
+        for field in ('exact', 'common', 'stemmed'):
+            if field + ':' in str(qp):
+                highlight_field = field
+                break
 
-        is_content_query = any(x in str(qp) for x in ('stemmed:', 'exact:', 'common:'))
-        if is_content_query:
+        is_content_search = highlight_field is not None
+        if is_content_search:
             try:
-                num = int(url_num or 0)
-                if num < 0:
-                    raise ValueError
+                page_num = get_page_num(url_num)
             except ValueError:
+                # drop url_num
                 return pretty_redirect(url_for('search_form', url_query=url_query))
-            pagenum = int(num / sessions_per_page) + 1
-            page = searcher.search_page(qp, pagenum, pagelen=sessions_per_page)
+            page_results = searcher.search_page(qp, pagenum=page_num, pagelen=sessions_per_content_page)
         else:
-            page = searcher.search_page(qp, 1, pagelen=150)
+            page_results = searcher.search_page(qp, pagenum=1, pagelen=sessions_per_listing_page)
 
-        page.results.fragmenter = ParagraphFragmenter()
-        page.results.order = highlight.SCORE
-        page.results.scorer = ConsistentFragmentScorer()
-        page.results.formatter = highlight.HtmlFormatter(between='')
+        page_results.results.fragmenter = ParagraphFragmenter()
+        page_results.results.order = highlight.SCORE
+        page_results.results.scorer = ConsistentFragmentScorer()
+        page_results.results.formatter = highlight.HtmlFormatter(between='')
 
-        if page.total <= page.pagelen:
-            output = ['<h2 id="results">{} result{} for {}</h2>'.format(page.total, 's' if page.total > 1 else '', qp)]
+        description, results = get_html_results(query, qp, page_results, highlight_field)
+        pagination = get_html_pagination(url_query, page_results)
+        is_content_page = highlight_field is not None
+        scroll = is_content_page and page_results.total == 1 or url_num is not None
+        return render_template("search-form.html", books=Books.indexed, query=query, description=description, results=results, pagination=pagination, scroll=scroll)
+
+
+def get_html_pagination(url_query, page_results):
+    prev_page_num = str(page_results.offset - sessions_per_content_page) + '/' if page_results.offset > sessions_per_content_page else ''
+    prev = '<a href="/q/{}/{}">← Previous</a>'.format(url_query, prev_page_num) if page_results.offset >= page_results.pagelen else ''
+    next_page_num = str(page_results.offset + page_results.pagelen) + '/'
+    next = '<a href="/q/{}/{}">Next →</a>'.format(url_query, next_page_num) if page_results.total - page_results.offset - page_results.pagelen > 0 else ''
+    result = '{} &nbsp; {}'.format(prev, next)
+    return result
+
+
+def get_short_url(searcher, query):
+    shorter_query = re.sub(r'\bsession:"(\d+)[^"]+"', r'session:\1', query)
+    if shorter_query != query:
+        qp = QueryParser(default_field, my_index.search_schema).parse(shorter_query)
+        results = searcher.search(qp, limit=2)
+        if results.scored_length() == 1:
+            query = shorter_query
+    result = url_for('search_form', url_query=urlize(query))
+    result = re.sub(r'/s/$', r'/', result)
+    return result
+
+
+def get_page_num(url_num):
+    num = int(url_num or 0)
+    if num < 0:
+        raise ValueError
+    result = int(num / sessions_per_content_page) + 1
+    return result
+
+
+def get_html_results(query, qp, page_results, highlight_field):
+    result = []
+
+    is_single_page = page_results.total <= page_results.pagelen
+    if is_single_page:
+        heading = '<h2 id="results">{} result{} for {}</h2>'.format(page_results.total, 's' if page_results.total > 1 else '', qp)
+    else:
+        heading = '<h2 id="results">Results {} to {} of {} for {}</h2>'.format(page_results.offset + 1, page_results.offset + page_results.pagelen, page_results.total, qp)
+    result.append(heading)
+
+    description = None
+    for hit_idx, hit in enumerate(page_results):
+        result.append('<div class="hit">')
+        result.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')">►</a>'.format(hit_idx))
+
+        hit_link = get_single_result_link(hit, query)
+        is_listing_page = highlight_field is None
+        nowhere_to_go = page_results.total == 1 or is_listing_page
+        if nowhere_to_go:
+            result.append('<span class="heading">{0[book_abbr]} {0[short]}</span>'.format(hit))
         else:
-            output = ['<h2 id="results">Results {} to {} of {} for {}</h2>'.format(page.offset + 1, page.offset + page.pagelen, page.total, qp)]
+            result.append('<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>'.format(hit, hit_link))
 
-        description = None
-        for h_idx, hit in enumerate(page):
-            if 'exact:' in str(qp):
-                highlight_field = 'exact'
-            elif 'common:' in str(qp):
-                highlight_field = 'common'
+        icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
+        result.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, icon))
+        result.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
+
+        for key_term in hit['key_terms'][:5]:
+            term_link = get_single_result_link(hit, key_term)
+            result.append('<a class="key-term" href="{}">{}</a> '.format(term_link, key_term))
+        result.append('<br />')
+
+        result.append('<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>'.format(hit, hit_idx))
+
+        description, highlights = get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link)
+        result.extend(highlights)
+        result.append("</div>")
+
+    result = '\n'.join(result)
+    return description, result
+
+
+def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
+    description = None
+    highlights = hit.highlights(highlight_field or default_field, top=single_result_paragraph_limit if page_results.total == 1 else multiple_result_paragraph_limit)
+
+    excerpts = []
+    for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
+        paragraph = commonmark(cm_paragraph)
+
+        gets_full_paragraph = page_results.pagenum == 1 and hit_idx == 0 and p_idx < multiple_result_paragraph_limit
+        if gets_full_paragraph:
+            excerpts.append("<li>{}</li>".format(paragraph))
+            if p_idx == 0:
+                description = BeautifulSoup(paragraph, 'lxml').text.strip()
+        else:
+            if p_idx == multiple_result_paragraph_limit:
+                excerpts.append("</ul><hr>")
+                excerpts.append('<ul class="excerpts">')
+            sentences = get_sentence_fragments(paragraph)
+            if page_results.total > 1:
+                excerpt = '<a href="{}" class="omission"> [...] </a>'.format(hit_link).join(sentences)
             else:
-                highlight_field = 'stemmed'
-            highlights = hit.highlights(highlight_field, top=50 if page.total == 1 else paragraph_limit)
-
-            output.append('<div class="hit">')
-            output.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')">►</a>'.format(h_idx))
-
-            direct_link = get_single_result_link(hit, query)
-            if page.total > 1 and is_content_query:
-                output.append('<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>'.format(hit, direct_link))
-            else:
-                output.append('<span class="heading">{0[book_abbr]} {0[short]}</span>'.format(hit))
-
-            icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
-            output.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, icon))
-            output.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
-
-            for key_term in hit['key_terms'][:5]:
-                term_link = get_single_result_link(hit, key_term)
-                output.append('<a class="key-term" href="{}">{}</a> '.format(term_link, key_term))
-            output.append('<br />')
-
-            output.append('<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>'.format(hit, h_idx))
-
-            if not highlights:
-                output.append("<br />")
-                continue
-
-            output.append('<ul class="excerpts">')
-            for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
-                paragraph = commonmark(cm_paragraph)
-
-                # if False:
-                if page.pagenum == 1 and h_idx == 0 and p_idx < paragraph_limit:
-                    excerpt = paragraph
-                    output.append("<li>{}</li>".format(excerpt))
-                    if p_idx == 0:
-                        description = BeautifulSoup(excerpt, 'lxml').text.strip()
-                else:
-                    if p_idx == paragraph_limit:
-                        output.append("</ul><hr>")
-                        output.append('<ul class="excerpts">')
-                    sentences = get_sentence_fragments(paragraph)
-                    if page.total > 1:
-                        excerpt = '<a href="{}" class="omission"> [...] </a>'.format(direct_link).join(sentences)
-                    else:
-                        excerpt = ' [...] '.join(sentences)
-                    output.append("<li><p>{}</p></li>".format(excerpt))
-            output.append("</ul>")
-            output.append("</div>")
-
-            # if result_len > 1 and h_idx == 0:
-            #     output.append("<hr>")
-        result = '\n'.join(output)
-
-        previous = '<a href="/q/{}/{}">← Previous</a>'.format(url_query, str(page.offset - sessions_per_page) + '/' if page.offset > sessions_per_page else '') if page.offset >= page.pagelen else ''
-        next = '<a href="/q/{}/{}">Next →</a>'.format(url_query, str(page.offset + page.pagelen) + '/') if page.total - page.offset - page.pagelen > 0 else ''
-        pagination = '{} &nbsp; {}'.format(previous, next)
-
-        scroll = ('session:' in str(qp) and page.total == 1) or url_num is not None
-        return render_template("search-form.html", books=Books.indexed, query=query, description=description, result=result, pagination=pagination, scroll=scroll)
+                excerpt = ' [...] '.join(sentences)
+            excerpts.append("<li><p>{}</p></li>".format(excerpt))
+    
+    result = []
+    if excerpts:
+        result.append('<ul class="excerpts">')
+        result.extend(excerpts)
+        result.append("</ul>")
+    return description, result
 
 
 def get_single_result_link(hit, query):
@@ -215,16 +255,16 @@ def get_single_result_link(hit, query):
 def get_sentence_fragments(paragraph):
     paragraph_soup = BeautifulSoup(paragraph, 'lxml')
 
-    fragments = []
+    result = []
     sentence_split = filter(None, re.split(r'(.*?(?:\.”|(?<!\b\w)(?<!\b(?:Dr|Sr|Jr|Mr|Ms))(?<!\bMrs)\.|[?!])[\s$])', paragraph))
     last_match_idx = None
     for s_idx, raw_sentence in enumerate(sentence_split):
         raw_sentence = raw_sentence.strip('\n')
-        sentence_soup = BeautifulSoup(raw_sentence, 'lxml')
 
         if 'class="match ' in raw_sentence:
-            sentence_in_paragraph_tag = get_deepest_match(paragraph_soup, sentence_soup)
-            is_italics = sentence_in_paragraph_tag.name == 'em' or any(tag.name == 'em' for tag in sentence_in_paragraph_tag.parents)
+            sentence_soup = BeautifulSoup(raw_sentence, 'lxml')
+            deepest_sentence_tag = get_deepest_tag(sentence_soup, paragraph_soup)
+            is_italics = deepest_sentence_tag.name == 'em' or any(tag.name == 'em' for tag in deepest_sentence_tag.parents)
 
             sentence = str(sentence_soup.body)
             sentence = re.sub(r'^<body>|</body>$', r'', sentence)
@@ -236,21 +276,21 @@ def get_sentence_fragments(paragraph):
 
             is_adjacent = s_idx - 1 == last_match_idx
             if is_adjacent:
-                fragments[-1] += sentence
+                result[-1] += sentence
             else:
-                fragments.append(sentence)
+                result.append(sentence)
             last_match_idx = s_idx
-    return fragments
+    return result
 
 
-def get_deepest_match(paragraph_soup, sentence_soup):
-    end_punctuation_re = r'(^\W+|\W+$)'
-    html_strings = re.sub(end_punctuation_re, '', ''.join(sentence_soup.strings))
+def get_deepest_tag(needle_soup, haystack_soup):
+    punctuation_ends_re = r'(^\W+|\W+$)'
+    needle_strings = re.sub(punctuation_ends_re, '', ''.join(needle_soup.strings))
 
     result = None
-    for tag in paragraph_soup.find_all(True):
-        tag_strings = re.sub(end_punctuation_re, '', ''.join(tag.strings))
-        if html_strings in tag_strings:
+    for tag in haystack_soup.find_all(True):
+        tag_strings = re.sub(punctuation_ends_re, '', ''.join(tag.strings))
+        if needle_strings in tag_strings:
             result = tag
 
     assert result

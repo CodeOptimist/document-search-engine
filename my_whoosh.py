@@ -13,7 +13,7 @@ class ParagraphFragmenter(Fragmenter):
         for t in tokens:
             if t.matched:
                 cur = self.get_paragraph_pos(text, t)
-        #
+
                 if cur != last and paragraph_tokens:
                     yield Fragment(text, paragraph_tokens, last[0], last[1])
                     paragraph_tokens = []
@@ -40,7 +40,7 @@ class ConsistentFragmentScorer(BasicFragmentScorer):
     def __call__(self, f):
         score = super(ConsistentFragmentScorer, self).__call__(f)
 
-        # line = f.text[f.startchar:f.endchar]
+        # fragment_text = f.text[f.startchar:f.endchar]
         if f.startchar:
             score += 1 / f.startchar
         return score
