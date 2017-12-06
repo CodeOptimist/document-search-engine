@@ -1,5 +1,7 @@
 from whoosh.analysis import RegexTokenizer, LowercaseFilter, StopFilter, STOP_WORDS, default_pattern, Filter, StemFilter, stem
 from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
+from whoosh.scoring import BM25F
+from datetime import datetime
 
 
 class ParagraphFragmenter(Fragmenter):
@@ -44,6 +46,31 @@ class ConsistentFragmentScorer(BasicFragmentScorer):
         if f.startchar:
             score += 1 / f.startchar
         return score
+
+
+class DateBM25F(BM25F):
+    use_final = True
+    def final(self, searcher, docnum, score):
+        fields = searcher.stored_fields(docnum)
+        score = 1 - 1 / score
+        if 'date' in fields:
+            if isinstance(self, DescDateBM25F):
+                date_score = (fields['date'] - datetime(1900, 1, 1)).total_seconds()
+            elif isinstance(self, AscDateBM25F):
+                date_score = (datetime.now() - fields['date']).total_seconds()
+            else:
+                raise NotImplementedError
+            score += date_score + 1.0
+            score /= 10**9
+        return score
+
+
+class DescDateBM25F(DateBM25F):
+    pass
+
+
+class AscDateBM25F(DateBM25F):
+    pass
 
 
 def CleanupStandardAnalyzer(expression=default_pattern, stoplist=STOP_WORDS, minsize=2, maxsize=None, gaps=False):

@@ -73,6 +73,9 @@
             font-family: Verdana, sans-serif;
             font-size: 0.9em;
         }
+        input {vertical-align: bottom;}
+        #search {padding: 0.5em 0;}
+        #results {margin-top: 1.5em;}
 
         .hit {margin-bottom: 1.5em;}
 
@@ -112,9 +115,10 @@
     <li>{{ example('exact:thankful', 'the exact word (not stemmed to "thank")')|safe }}</li>
     <li>{{ example('"mind matter"~3', 'the complete phrase, but allows a distance between the words')|safe }}</li>
     <li>{{ example('book:tes? exercise', '"exercise" in every TES book')|safe }}</li>
+    <li>{{ example('hospital date:"feb 1964"', '"hospital" in the given month')|safe }}</li>
     <li>{{ example('common:"we are seth"', 'keeps the common words "we" and "are"')|safe }}</li>
     <li>{{ example('NOT book:wth exercise', '"exercise" excluding the book Way Toward Health')|safe }}</li>
-    <li>{{ example('heading:(essay 4) mind', 'both words in heading, "mind" in sessions')|safe }}</li>
+    <li>{{ example('heading:(essay 4) mind', 'both words in heading, "mind" in text')|safe }}</li>
     <li>{{ example('"five minutes" OR "ten minutes" book:(ss OR nopr OR tma)', 'phrases in multiple books')|safe }}</li>
 </ul>
 <p>Leave out the search words for casual browsing:</p>
@@ -123,11 +127,13 @@
     <li>{{ example('heading:dreams', 'any heading containing "dreams" in any book')|safe }}</li>
     <li>{{ example('heading:"chapter 16"', 'complete phrase in heading')|safe }}</li>
     <li>{{ example('session:636', 'number in session title')|safe }}</li>
-    <li>{{ example('session:(January 1977)', 'both words in session title')|safe }}</li>
+    <li>{{ example('session:(esp class)', 'both words in session title')|safe }}</li>
+    <li>{{ example('date:[oct 1970 to dec 8 1970]', 'sessions in the given date range')|safe }}</li>
     <li>{{ example('book:tma heading:*teen', 'headings ending in "teen" in The Magical Approach')|safe }}</li>
 </ul>
 </div>
 <p><a href="http://whoosh.readthedocs.io/en/latest/querylang.html">Query language reference</a></p>
+<div id="search">
 <p class="books">Individual books: {{ books|map('book_link')|join(', ')|safe }}</p>
 <p class="books">Multiple volumes: {{ [
     ('UR?', "The \"Unknown\" Reality"),
@@ -136,11 +142,59 @@
     ('TPS?', "The Personal Sessions"),
     ('TECS?', "The Early Class Sessions"),
     ]|map('volumes_link')|join(', ')|safe }}</p>
+{% if doc_count == 0 %}
+<h2>Rebuilding index... please refresh in a few minutes.</h2>
+{% endif %}
 <form method="post">
     <!--suppress SillyAssignmentJS -->
     <input {% if not query %}autofocus{% endif %} required type="text" id="query" name="query" title="query" onfocus="this.value = this.value" value="{{ query }}">
     <input type="submit" value="Search">
+
+    <p>Hit order:
+        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" value="rel" required{% if hit_order not in ('asc', 'desc') %} checked{% endif %}> relevance</label>
+        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" value="asc"{% if hit_order == 'asc' %} checked{% endif %}> earliest</label>
+        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" value="desc"{% if hit_order == 'desc' %} checked{% endif %}> latest</label>
+    </p>
+    <p>Excerpt order:
+        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-rel" value="rel" required{% if excerpt_order != 'pos' %} checked{% endif %}> relevance</label>
+        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-pos" value="pos"{% if excerpt_order == 'pos' %} checked{% endif %}> position</label>
+    <script>
+    function fadeInputs(name, opacity) {
+        inputs = document.getElementsByTagName("input");
+        for (i = 0; i < inputs.length; i++) {
+            var input = inputs[i];
+            if (input.name == name)
+                input.style.opacity = opacity;
+        }
+    }
+
+    {% if hit_order is none and excerpt_order is none %}
+    var autoExcerptOrder = true;
+    fadeInputs('excerpt-order', 0.5);
+    {% else %}
+    var autoExcerptOrder = false;
+    {% endif %}
+
+    function hitOrder(radio) {
+        if (autoExcerptOrder) {
+            if (['asc', 'desc'].includes(radio.value)) {
+                document.getElementById('excerpt-order-pos').checked = true;
+            } else {
+                document.getElementById('excerpt-order-rel').checked = true;
+            }
+        }
+    }
+
+    function excerptOrder(radio) {
+        if (autoExcerptOrder) {
+            autoExcerptOrder = false;
+            fadeInputs('excerpt-order', 1.0);
+        }
+    }
+    </script>
+    </p>
 </form>
+</div>
 <p>The entire Seth collection, including audio, early and personal sessions, can be ordered from <a href="https://sethcenter.com/collections/books">sethcenter.com</a>.<br />
 There are digital copies in the <a href="https://smile.amazon.com/s/rh=n%3A133140011%2Cp_27%3AJane+Roberts%2Cn%3A%21133141011%2Cn%3A154606011">Amazon kindle store</a>.</p>
 <p>Book content copyright © Laurel Davies-Butts</p>
@@ -151,7 +205,7 @@ There are digital copies in the <a href="https://smile.amazon.com/s/rh=n%3A13314
 </body>
 {% if scroll %}
     <script>
-        document.getElementById('results').scrollIntoView();
+        document.getElementById('{{ scroll }}').scrollIntoView();
     </script>
 {% endif %}
 <script>

@@ -1,9 +1,10 @@
 import os
 import re
+from datetime import datetime
 
 from whoosh import index, analysis
 from whoosh.analysis import StandardAnalyzer, StemmingAnalyzer, STOP_WORDS
-from whoosh.fields import ID, TEXT, Schema, STORED
+from whoosh.fields import ID, TEXT, Schema, STORED, DATETIME
 
 from books import Books
 from my_whoosh import CleanupStandardAnalyzer, CleanupStemmingAnalyzer
@@ -60,9 +61,31 @@ def add_document(writer, d, tiers, content):
     d['long'] = ''.join(["- {}<br />".format(tier['long']) for tier in tiers if tier['long']])
 
     d['session'] = tiers[2]['short']
+    d['date'] = get_date_from_session(d['session'])
     d['key_terms_content'] = content
-    print(d['book_abbr'], d['heading'], d['session'])
+    print("{}\t{}\t{}".format(d['book_abbr'], d['heading'], d['session']))
     writer.add_document(**d)
+
+
+last_date = None
+def get_date_from_session(session):
+    global last_date
+    if not session:
+        return None
+
+    m = re.search(r'\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d+\b(?:, (?P<year>\d+))?', session, re.IGNORECASE)
+    if not m:
+        return None
+
+    date_str = m.group(0)
+    if not m.group('year'):
+        # todo fix these in books.py, get rid of last_date hack
+        print(last_date.date(), session)
+        date_str += ", {}".format(last_date.year)
+
+    result = datetime.strptime(date_str, '%B %d, %Y')
+    last_date = result
+    return result
 
 
 def add_key_terms(ix):
@@ -131,12 +154,13 @@ def update_heading_tiers(book, tiers, header):
 # term can't be adjacent to mid-line double asterisks
 # (remember that our pre-processing fixed *hello ho**w are you* to *hello how are you* already, so legitimate ones are safe)
 analyzer_re = re.compile(r'(?<![^\n]\*\*)\b(\w+([.*]?\w+)*(?<![0-9])|[0-9]+([.*]?[0-9]+)*)\b(?!\*\*[^\n])', re.UNICODE)
-search_schema = Schema(book=ID(stored=True),
-                       heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
-                       session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
-                       exact=TEXT(stored=True, analyzer=StandardAnalyzer(stoplist=None)),
-                       stemmed=TEXT(stored=True, analyzer=StemmingAnalyzer()),
-                       common=TEXT(stored=True, analyzer=StemmingAnalyzer(stoplist=None)),
+search_schema = Schema(book=ID(),
+                       heading=TEXT(analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
+                       session=TEXT(analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
+                       date=DATETIME(),
+                       exact=TEXT(analyzer=StandardAnalyzer(stoplist=None)),
+                       stemmed=TEXT(analyzer=StemmingAnalyzer()),
+                       common=TEXT(analyzer=StemmingAnalyzer(stoplist=None)),
                        )
 
 
@@ -148,11 +172,11 @@ def create_index(index_dir):
                     short=STORED(),
                     long=STORED(),
                     key_terms=STORED(),
-                    # a stop list (default) is important here
-                    key_terms_content=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re)),
+                    key_terms_content=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, STOP_WORDS)),
                     book=ID(stored=True),
                     heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
                     session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
+                    date=DATETIME(stored=True, sortable=True),
                     exact=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, stoplist=None)),
                     stemmed=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re)),
                     common=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None)),
