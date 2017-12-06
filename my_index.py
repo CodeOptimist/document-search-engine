@@ -10,7 +10,7 @@ from books import Books
 from my_whoosh import CleanupStandardAnalyzer, CleanupStemmingAnalyzer
 
 
-#todo manually search for and fix these where a misplaced asterisk breaks italics: \*[^*]*? \*
+# todo manually search for and fix these where a misplaced asterisk breaks italics: \*[^*]*? \*
 
 def pre_process_book(book, text):
     if book['abbr'] == 'DEaVF2':
