@@ -148,7 +148,7 @@
 <form method="post">
     <!--suppress SillyAssignmentJS -->
     <input {% if not plain_query %}autofocus{% endif %} required type="text" id="query" name="query" title="query" onfocus="this.value = this.value" value="{{ plain_query }}">
-    <input type="submit" value="Search">
+    <input id="submit" type="submit" value="Search">
 
     <p>Hit order:
         <label><input type="radio" onclick="hitOrder(this);" name="hit-order" value="rel" required{% if hit_order not in ('asc', 'desc') %} checked{% endif %}> relevance</label>

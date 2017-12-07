@@ -266,8 +266,23 @@ def get_html_results(plain_query, qp, page_results, highlight_field):
 
 
 def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
+    result = []
     description = None
     highlights = hit.highlights(highlight_field or default_field, top=single_hit_excerpt_limit if page_results.total == 1 else multiple_hit_excerpt_limit + 1)
+
+    verbatim_copy = False
+    if page_results.total == 1 and url_state['excerpt_order'] == 'pos':
+        full_doc_text = hit['exact']
+        num_highlight_paragraphs = highlights.count('\n')
+        num_doc_paragraphs = full_doc_text.count('\n\n')
+        coverage = num_highlight_paragraphs / num_doc_paragraphs
+        if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == single_hit_excerpt_limit):
+            result.append("<h4>Your search has returned many paragraphs of this document in their original order.")
+            result.append("As this is quite similar to the copyrighted work, only <em>sentences</em> matching the search terms are displayed.")
+            result.append('To view full paragraphs please narrow your search or <a onclick="'
+                          "document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
+                          '" href="javascript:void(0);">sort excerpts by relevance.</a></h4>')
+            verbatim_copy = True
 
     excerpts = []
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
@@ -278,7 +293,7 @@ def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
         paragraph = commonmark(cm_paragraph).strip()
 
         gets_full_paragraph = page_results.pagenum == 1 and hit_idx == 0 and p_idx < excerpt_omission_threshold
-        if gets_full_paragraph:
+        if gets_full_paragraph and not verbatim_copy:
             excerpts.append("<li>{}</li>".format(paragraph))
             if p_idx == 0:
                 description = BeautifulSoup(paragraph, 'lxml').text.strip()
@@ -293,7 +308,6 @@ def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
                 excerpt = ' [...] '.join(sentences)
             excerpts.append("<li><p>{}</p></li>".format(excerpt))
 
-    result = []
     if excerpts:
         result.append('<ul class="excerpts">')
         result.extend(excerpts)
