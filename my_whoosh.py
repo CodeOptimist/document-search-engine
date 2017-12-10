@@ -1,7 +1,8 @@
 from whoosh.analysis import RegexTokenizer, LowercaseFilter, StopFilter, STOP_WORDS, default_pattern, Filter, StemFilter, stem
 from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
 from whoosh.scoring import BM25F
-from datetime import datetime
+from datetime import datetime, timedelta
+import re
 
 
 class ParagraphFragmenter(Fragmenter):
@@ -54,10 +55,14 @@ class DateBM25F(BM25F):
         fields = searcher.stored_fields(docnum)
         score = 1 - 1 / score
         if 'date' in fields:
+            chapter_m = re.search(r'chapter\W*(\d+)', fields['heading'], re.IGNORECASE)
+            chapter = int(chapter_m.group(1)) if chapter_m else 0
+            date = fields['date'] + timedelta(seconds=chapter)
+            assert isinstance(date, datetime)
             if isinstance(self, DescDateBM25F):
-                date_score = (fields['date'] - datetime(1900, 1, 1)).total_seconds()
+                date_score = (date - datetime(1800, 1, 1)).total_seconds()
             elif isinstance(self, AscDateBM25F):
-                date_score = (datetime.now() - fields['date']).total_seconds()
+                date_score = (datetime(2200, 1, 1) - date).total_seconds()
             else:
                 raise NotImplementedError
             score += date_score + 1.0

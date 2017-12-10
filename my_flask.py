@@ -23,6 +23,8 @@ from books import Books
 from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer, DescDateBM25F, AscDateBM25F
 
 app = Flask(__name__)
+# occasionally a single session straddles 2 chapters, which are different hits
+maximum_same_session_hits = 2
 sessions_per_content_page = 10
 sessions_per_listing_page = 150
 multiple_hit_excerpt_limit = 3
@@ -71,10 +73,12 @@ def urlize(s, in_href=False, undo=False):
         s = s.replace('\'', '"')
         s = urllib.parse.unquote_plus(s)
     else:
-        # let's make book names lowercase (no undo)
+        s = s.strip()
+        # let's make book names lowercase
         s = re.sub(r'\bbook:(\w+)', lambda m: m.group(0).lower(), s)
-        # no undo for single quote to space since that is how Whoosh itself treats apostrophes
-        s = s.replace("'", ' ').replace('"', '\'')
+        # single quote to space is how Whoosh itself treats apostrophes
+        # double quotation marks to singles because in many browsers " will appear as the ugly %22
+        s = s.replace("'", ' ').replace('“', '"').replace('”', '"').replace('"', '\'')
         # valid path component chars are: ()':* http://stackoverflow.com/a/2375597/879
         # but browsers seem okay with []{} also
         safe = '[]{}\'()*:'
@@ -107,7 +111,7 @@ def search_form(os_query=None, q_query=None, hit_order=None, excerpt_order=None,
 
     # redirect POST to GET
     if request.method == 'POST':
-        q_query = urlize(request.form['query'].strip())
+        q_query = urlize(request.form['query'])
         _, hit_order, excerpt_order = get_valid_order(request.form['hit-order'], request.form['excerpt-order'])
         hit_order = None if hit_order == 'rel' else hit_order
         excerpt_order = None if excerpt_order == 'rel' else excerpt_order
@@ -130,6 +134,11 @@ def search_form(os_query=None, q_query=None, hit_order=None, excerpt_order=None,
         # but oddly enough flask here shows it as ? even though it keeps e.g. + for spaces, so we put it back to %3F
         url_state['q_query'] = url_state['q_query'].replace('?', '%3F')
         plain_query = urlize(url_state['q_query'], undo=True)
+        # even a manually typed /q/ query should be consistent with the URL from a POST search
+        # (if they manually put " in the URL we still want them changed to ')
+        consistent_q_query = urlize(plain_query)
+        if url_state['q_query'] != consistent_q_query:
+            return stateful_redirect('search_form', q_query=consistent_q_query)
         return search_whoosh(plain_query)
 
 
@@ -141,24 +150,24 @@ def get_valid_order(hit_order, excerpt_order):
 
 
 def get_valid_num(num):
+    if num is None:
+        return False, None
     try:
         num = int(num or 0)
         if num < 0:
             raise ValueError
-        was_bad = False
         result = int(num / sessions_per_content_page) + 1
+        return False, result
     except ValueError:
-        was_bad = True
-        result = None
-    return was_bad, result
+        return True, None
 
 
 def search_whoosh(plain_query):
     weighting = AscDateBM25F if url_state['hit_order'] == 'asc' else DescDateBM25F if url_state['hit_order'] == 'desc' else BM25F
     with ix.searcher(weighting=weighting) as searcher:
-        to_shorten = request.base_url.endswith('/s/')
-        if to_shorten:
-            return pretty_redirect(get_short_url(searcher, plain_query))
+        to_session = request.base_url.endswith('/s/')
+        if to_session:
+            return pretty_redirect(get_session_url(searcher, plain_query))
 
         qp = QueryParser(default_field, my_index.search_schema)
         qp.add_plugin(DateParserPlugin())
@@ -180,7 +189,7 @@ def search_whoosh(plain_query):
 
         is_content_search = highlight_field is not None
         if is_content_search:
-            page_results = searcher.search_page(qp, pagenum=url_state['page_num'], pagelen=sessions_per_content_page)
+            page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=sessions_per_content_page)
         else:
             page_results = searcher.search_page(qp, pagenum=1, pagelen=sessions_per_listing_page)
 
@@ -209,15 +218,23 @@ def get_html_pagination(page_results):
     return result
 
 
-def get_short_url(searcher, plain_query):
+def get_session_url(searcher, plain_query):
+    hit_order = None
     shorter_query = re.sub(r'\bsession:"(\d+)[^"]+"', r'session:\1', plain_query)
-    if shorter_query != plain_query:
-        qp = QueryParser(default_field, my_index.search_schema).parse(shorter_query)
-        results = searcher.search(qp, limit=2)
-        if results.scored_length() == 1:
-            plain_query = shorter_query
-    result = stateful_url_for('search_form', q_query=urlize(plain_query), page_num=None)
+    qp = QueryParser(default_field, my_index.search_schema).parse(shorter_query)
+    # the limit is purely for efficiency
+    results = searcher.search(qp, limit=maximum_same_session_hits + 1)
+    if all_same_session(results):
+        if results.scored_length() > 1:
+            hit_order = 'asc'  # so we can see sessions that span chapters in order
+        plain_query = shorter_query
+    result = stateful_url_for('search_form', q_query=urlize(plain_query), hit_order=hit_order, page_num=None)
     result = re.sub(r'/s/$', r'/', result)
+    return result
+
+
+def all_same_session(results):
+    result = all(results[0]['session'] == hit['session'] for hit in results)
     return result
 
 
@@ -236,9 +253,9 @@ def get_html_results(plain_query, qp, page_results, highlight_field):
         result.append('<div class="hit">')
         result.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')">►</a>'.format(hit_idx))
 
-        hit_link = get_single_result_link(hit, plain_query)
+        hit_link = get_single_session_link(hit, plain_query)
         is_listing_page = highlight_field is None
-        nowhere_to_go = page_results.total == 1 or is_listing_page
+        nowhere_to_go = is_listing_page or all_same_session(page_results)
         if nowhere_to_go:
             result.append('<span class="heading">{0[book_abbr]} {0[short]}</span>'.format(hit))
         else:
@@ -249,7 +266,7 @@ def get_html_results(plain_query, qp, page_results, highlight_field):
         result.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
 
         for key_term in hit['key_terms'][:5]:
-            term_link = get_single_result_link(hit, key_term)
+            term_link = get_single_session_link(hit, key_term)
             result.append('<a class="key-term" href="{}">{}</a> '.format(term_link, key_term))
         result.append('<br />')
 
@@ -268,10 +285,10 @@ def get_html_results(plain_query, qp, page_results, highlight_field):
 def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
     result = []
     description = None
-    highlights = hit.highlights(highlight_field or default_field, top=single_hit_excerpt_limit if page_results.total == 1 else multiple_hit_excerpt_limit + 1)
+    highlights = hit.highlights(highlight_field or default_field, top=single_hit_excerpt_limit if all_same_session(page_results) else multiple_hit_excerpt_limit + 1)
 
     verbatim_copy = False
-    if page_results.total == 1 and url_state['excerpt_order'] == 'pos':
+    if all_same_session(page_results) and url_state['excerpt_order'] == 'pos':
         full_doc_text = hit['exact']
         num_highlight_paragraphs = highlights.count('\n')
         num_doc_paragraphs = full_doc_text.count('\n\n')
@@ -286,14 +303,15 @@ def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
 
     excerpts = []
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
-        if page_results.total > 1 and p_idx == multiple_hit_excerpt_limit:
+        if not all_same_session(page_results) and p_idx == multiple_hit_excerpt_limit:
             excerpts.append('<li><p><a href="{}"> More... </a></p></li>'.format(hit_link))
             continue
 
         paragraph = commonmark(cm_paragraph).strip()
 
-        gets_full_paragraph = page_results.pagenum == 1 and hit_idx == 0 and p_idx < excerpt_omission_threshold
-        if gets_full_paragraph and not verbatim_copy:
+        is_first_hit = page_results.pagenum == 1 and hit_idx == 0 and p_idx < excerpt_omission_threshold
+        gets_full_paragraph = not verbatim_copy and all_same_session(page_results) or is_first_hit
+        if gets_full_paragraph:
             excerpts.append("<li>{}</li>".format(paragraph))
             if p_idx == 0:
                 description = BeautifulSoup(paragraph, 'lxml').text.strip()
@@ -302,10 +320,10 @@ def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
                 excerpts.append("</ul><hr>")
                 excerpts.append('<ul class="excerpts">')
             sentences = get_sentence_fragments(paragraph)
-            if page_results.total > 1:
-                excerpt = '<a href="{}" class="omission"> [...] </a>'.format(hit_link).join(sentences)
-            else:
+            if all_same_session(page_results):
                 excerpt = ' [...] '.join(sentences)
+            else:
+                excerpt = '<a href="{}" class="omission"> [...] </a>'.format(hit_link).join(sentences)
             excerpts.append("<li><p>{}</p></li>".format(excerpt))
 
     if excerpts:
@@ -315,7 +333,7 @@ def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
     return description, result
 
 
-def get_single_result_link(hit, plain_query):
+def get_single_session_link(hit, plain_query):
     if hit['session']:
         session = re.sub(r'[^\w’]', ' ', hit['session'])
         session = re.sub(r'\s+', ' ', session).strip()
