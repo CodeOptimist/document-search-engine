@@ -134,11 +134,6 @@ def search_form(os_query=None, q_query=None, hit_order=None, excerpt_order=None,
         # but oddly enough flask here shows it as ? even though it keeps e.g. + for spaces, so we put it back to %3F
         url_state['q_query'] = url_state['q_query'].replace('?', '%3F')
         plain_query = urlize(url_state['q_query'], undo=True)
-        # even a manually typed /q/ query should be consistent with the URL from a POST search
-        # (if they manually put " in the URL we still want them changed to ')
-        consistent_q_query = urlize(plain_query)
-        if url_state['q_query'] != consistent_q_query:
-            return stateful_redirect('search_form', q_query=consistent_q_query)
         return search_whoosh(plain_query)
 
 
@@ -238,6 +233,20 @@ def all_same_session(results):
     return result
 
 
+def get_html_coverage(highlights, hit, results):
+    full_doc_text = hit['exact']
+    num_highlight_paragraphs = highlights.count('\n')
+    num_doc_paragraphs = full_doc_text.count('\n\n')
+    coverage = num_highlight_paragraphs / num_doc_paragraphs
+    coverage_str = '<span class="coverage" title="excerpts/paragraphs">{}/{} ({}%)</span>'.format(num_highlight_paragraphs, num_doc_paragraphs, round(coverage * 100))
+
+    is_copy = False
+    if all_same_session(results) and url_state['excerpt_order'] == 'pos':
+        if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == single_hit_excerpt_limit):
+            is_copy = True
+    return is_copy, coverage_str
+
+
 def get_html_results(plain_query, qp, page_results, highlight_field):
     result = []
 
@@ -262,44 +271,45 @@ def get_html_results(plain_query, qp, page_results, highlight_field):
             result.append('<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>'.format(hit, hit_link))
 
         icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
+        result.append('<span class="icons">')
         result.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, icon))
         result.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
+        result.append('</span>')
 
+        highlights = hit.highlights(highlight_field or default_field, top=single_hit_excerpt_limit if all_same_session(page_results) else multiple_hit_excerpt_limit + 1)
+        is_copy, html_coverage = get_html_coverage(highlights, hit, page_results)
+        if all_same_session(page_results):
+            result.append(html_coverage)
+
+        result.append('<span class="terms">')
         for key_term in hit['key_terms'][:5]:
             term_link = get_single_session_link(hit, key_term)
             result.append('<a class="key-term" href="{}">{}</a> '.format(term_link, key_term))
+        result.append("</span>")
         result.append('<br />')
 
         result.append('<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>'.format(hit, hit_idx))
 
-        hit_description, highlights = get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link)
+        if is_copy:
+            result.append("<p>Your search returned many paragraphs in their original order.")
+            result.append("As this would be similar to the copyrighted work, only <strong>sentences</strong> matching the search terms are displayed.")
+            result.append('To view full paragraphs please narrow your search or <a onclick="'
+                          "document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
+                          '" href="javascript:void(0);">sort excerpts by relevance.</a></p>')
+
+        hit_description, html_highlights = get_html_highlights(highlights, is_copy, page_results, hit_idx, hit, hit_link)
         if hit_idx == 0:
             description = "{} results.  {}".format(page_results.total, hit_description)
-        result.extend(highlights)
+        result.extend(html_highlights)
         result.append("</div>")
 
     result = '\n'.join(result)
     return description, result
 
 
-def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
+def get_html_highlights(highlights, is_copy, page_results, hit_idx, hit, hit_link):
     result = []
     description = None
-    highlights = hit.highlights(highlight_field or default_field, top=single_hit_excerpt_limit if all_same_session(page_results) else multiple_hit_excerpt_limit + 1)
-
-    verbatim_copy = False
-    if all_same_session(page_results) and url_state['excerpt_order'] == 'pos':
-        full_doc_text = hit['exact']
-        num_highlight_paragraphs = highlights.count('\n')
-        num_doc_paragraphs = full_doc_text.count('\n\n')
-        coverage = num_highlight_paragraphs / num_doc_paragraphs
-        if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == single_hit_excerpt_limit):
-            result.append("<h4>Your search has returned many paragraphs of this document in their original order.")
-            result.append("As this is quite similar to the copyrighted work, only <em>sentences</em> matching the search terms are displayed.")
-            result.append('To view full paragraphs please narrow your search or <a onclick="'
-                          "document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
-                          '" href="javascript:void(0);">sort excerpts by relevance.</a></h4>')
-            verbatim_copy = True
 
     excerpts = []
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
@@ -310,7 +320,7 @@ def get_html_highlights(highlight_field, page_results, hit_idx, hit, hit_link):
         paragraph = commonmark(cm_paragraph).strip()
 
         is_first_hit = page_results.pagenum == 1 and hit_idx == 0 and p_idx < excerpt_omission_threshold
-        gets_full_paragraph = not verbatim_copy and all_same_session(page_results) or is_first_hit
+        gets_full_paragraph = not is_copy and (all_same_session(page_results) or is_first_hit)
         if gets_full_paragraph:
             excerpts.append("<li>{}</li>".format(paragraph))
             if p_idx == 0:
