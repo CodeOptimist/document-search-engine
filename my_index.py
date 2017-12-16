@@ -3,8 +3,9 @@ import re
 from datetime import datetime
 
 from whoosh import index, analysis
-from whoosh.analysis import StandardAnalyzer, StemmingAnalyzer, STOP_WORDS
+from whoosh.analysis import StandardAnalyzer, StemmingAnalyzer, STOP_WORDS, CharsetFilter
 from whoosh.fields import ID, TEXT, Schema, STORED, DATETIME
+from whoosh.support.charset import accent_map
 
 from books import Books
 from my_whoosh import CleanupStandardAnalyzer, CleanupStemmingAnalyzer
@@ -155,12 +156,12 @@ def update_heading_tiers(book, tiers, header):
 # (remember that our pre-processing fixed *hello ho**w are you* to *hello how are you* already, so legitimate ones are safe)
 analyzer_re = re.compile(r'(?<![^\n]\*\*)\b(\w+([.*]?\w+)*(?<![0-9])|[0-9]+([.*]?[0-9]+)*)\b(?!\*\*[^\n])', re.UNICODE)
 search_schema = Schema(book=ID(),
-                       heading=TEXT(analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
+                       heading=TEXT(analyzer=StemmingAnalyzer(minsize=1, stoplist=None) | CharsetFilter(accent_map)),
                        session=TEXT(analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
                        date=DATETIME(),
-                       exact=TEXT(analyzer=StandardAnalyzer(stoplist=None)),
-                       stemmed=TEXT(analyzer=StemmingAnalyzer()),
-                       common=TEXT(analyzer=StemmingAnalyzer(stoplist=None)),
+                       exact=TEXT(analyzer=StandardAnalyzer(stoplist=None) | CharsetFilter(accent_map)),
+                       stemmed=TEXT(analyzer=StemmingAnalyzer() | CharsetFilter(accent_map)),
+                       common=TEXT(analyzer=StemmingAnalyzer(stoplist=None) | CharsetFilter(accent_map)),
                        )
 
 
@@ -172,14 +173,14 @@ def create_index(index_dir):
                     short=STORED(),
                     long=STORED(),
                     key_terms=STORED(),
-                    key_terms_content=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, STOP_WORDS)),
+                    key_terms_content=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, STOP_WORDS) | CharsetFilter(accent_map)),
                     book=ID(stored=True),
-                    heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None)),
+                    heading=TEXT(stored=True, analyzer=StemmingAnalyzer(minsize=1, stoplist=None) | CharsetFilter(accent_map)),
                     session=TEXT(stored=True, analyzer=StandardAnalyzer(minsize=1, stoplist=None)),
                     date=DATETIME(stored=True, sortable=True),
-                    exact=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, stoplist=None)),
-                    stemmed=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re)),
-                    common=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None)),
+                    exact=TEXT(stored=True, analyzer=CleanupStandardAnalyzer(analyzer_re, stoplist=None) | CharsetFilter(accent_map)),
+                    stemmed=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re) | CharsetFilter(accent_map)),
+                    common=TEXT(stored=True, analyzer=CleanupStemmingAnalyzer(analyzer_re, stoplist=None) | CharsetFilter(accent_map)),
                     )
 
     ix = index.create_in(index_dir, schema)

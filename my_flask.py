@@ -24,25 +24,25 @@ from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer, DescDateBM2
 
 app = Flask(__name__)
 # occasionally a single session straddles 2 chapters, which are different hits
-maximum_same_session_hits = 2
-sessions_per_content_page = 10
-sessions_per_listing_page = 150
-multiple_hit_excerpt_limit = 3
-single_hit_excerpt_limit = 50    # effectively ALL of them, I would think
-# excerpt_omission_threshold = 3
-excerpt_omission_threshold = max(single_hit_excerpt_limit, multiple_hit_excerpt_limit)
-default_field = 'stemmed'
+MAXIMUM_SAME_SESSION_HITS = 2
+SESSIONS_PER_CONTENT_PAGE = 10
+SESSIONS_PER_LISTING_PAGE = 150
+MULTIPLE_HIT_EXCERPT_LIMIT = 3
+SINGLE_HIT_EXCERPT_LIMIT = 50    # effectively ALL of them, I would think
+SINGLE_HIT_COPY_EXCERPT_LIMIT = 10
+EXCERPT_OMISSION_THRESHOLD = max(SINGLE_HIT_EXCERPT_LIMIT, MULTIPLE_HIT_EXCERPT_LIMIT)
+DEFAULT_FIELD = 'stemmed'
 
 
 @app.template_filter('volumes_link')
-def book_link_html(tpl):
+def get_html_book_link(tpl):
     abbr, name = tpl
     return """<a href="javascript:void()" title="{1}" onclick="filterBook('{0}')">{0}</a>""".format(abbr, html.escape(name))
 
 
 @app.template_filter('book_link')
 def book_link(book):
-    return book_link_html((book['abbr'], book['name']))
+    return get_html_book_link((book['abbr'], book['name']))
 
 
 @app.context_processor
@@ -90,6 +90,8 @@ def urlize(s, in_href=False, undo=False):
 
 
 url_state = {}
+
+
 # order is important, url_for() returns the last matching
 @app.route('/q/', methods=['GET', 'POST'])
 @app.route('/', methods=['GET', 'POST'])
@@ -133,8 +135,8 @@ def search_form(os_query=None, q_query=None, hit_order=None, excerpt_order=None,
         # in a GET the ? is stripped, even if it's before a /, so must always use %3F for the GET url (urlize(undo=False))
         # but oddly enough flask here shows it as ? even though it keeps e.g. + for spaces, so we put it back to %3F
         url_state['q_query'] = url_state['q_query'].replace('?', '%3F')
-        plain_query = urlize(url_state['q_query'], undo=True)
-        return search_whoosh(plain_query)
+        query_str = urlize(url_state['q_query'], undo=True)
+        return search_whoosh(query_str)
 
 
 def get_valid_order(hit_order, excerpt_order):
@@ -151,26 +153,26 @@ def get_valid_num(num):
         num = int(num or 0)
         if num < 0:
             raise ValueError
-        result = int(num / sessions_per_content_page) + 1
+        result = int(num / SESSIONS_PER_CONTENT_PAGE) + 1
         return False, result
     except ValueError:
         return True, None
 
 
-def search_whoosh(plain_query):
+def search_whoosh(query_str):
     weighting = AscDateBM25F if url_state['hit_order'] == 'asc' else DescDateBM25F if url_state['hit_order'] == 'desc' else BM25F
     with ix.searcher(weighting=weighting) as searcher:
         to_session = request.base_url.endswith('/s/')
         if to_session:
-            return pretty_redirect(get_session_url(searcher, plain_query))
+            return pretty_redirect(get_optimal_session_url(searcher, query_str))
 
-        qp = QueryParser(default_field, my_index.search_schema)
+        qp = QueryParser(DEFAULT_FIELD, my_index.search_schema)
         qp.add_plugin(DateParserPlugin())
         # todo this is pretty ugly
         try:
-            qp = qp.parse(plain_query)
+            qp = qp.parse(query_str)
         except:
-            dateless_query = re.sub(r'\bdate:\[.*\]', r'', plain_query, re.IGNORECASE)
+            dateless_query = re.sub(r'\bdate:\[.*\]', r'', query_str, re.IGNORECASE)
             return stateful_redirect('search_form', q_query=urlize(dateless_query) or None)
 
         if isinstance(qp, type(NullQuery)):
@@ -182,26 +184,66 @@ def search_whoosh(plain_query):
                 highlight_field = field
                 break
 
-        is_content_search = highlight_field is not None
-        if is_content_search:
-            page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=sessions_per_content_page)
+        if highlight_field is None:
+            page_results = searcher.search_page(qp, pagenum=1, pagelen=SESSIONS_PER_LISTING_PAGE)
+            result_type = 'listing'
         else:
-            page_results = searcher.search_page(qp, pagenum=1, pagelen=sessions_per_listing_page)
+            page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=SESSIONS_PER_CONTENT_PAGE)
+            result_type = 'single' if all_same_session(page_results) else 'multiple'
 
-        page_results.results.fragmenter = ParagraphFragmenter()
-        page_results.results.order = highlight.FIRST if url_state['excerpt_order'] == 'pos' else highlight.SCORE
-        page_results.results.scorer = ConsistentFragmentScorer()
-        page_results.results.formatter = highlight.HtmlFormatter(between='')
+        og_description = ""
+        result = {
+            'correction': get_html_correction(searcher, query_str, qp),
+            'results': get_html_results(query_str, qp, page_results, highlight_field, result_type),
+            'description': og_description,
+            'pagination': get_html_pagination(page_results),
+        }
+        result['scroll'] = None if result['correction'] else "results"
+        return render_template("search-form.html", **url_state, **result, query_str=query_str, books=Books.indexed, doc_count=ix.doc_count())
 
-        result = {}
-        result['description'], result['results'] = get_html_results(plain_query, qp, page_results, highlight_field)
-        result['pagination'] = get_html_pagination(page_results)
-        result['scroll'] = "results"
-        return render_template("search-form.html", **url_state, **result, plain_query=plain_query, books=Books.indexed, doc_count=ix.doc_count())
+
+def get_html_correction(searcher, query_str, qp):
+    exact_qp = QueryParser('exact', my_index.search_schema)
+    exact_qp.add_plugin(DateParserPlugin())
+    exact_qp = exact_qp.parse(query_str)
+    try:
+        corrected_query = searcher.correct_query(exact_qp, query_str, prefix=1)
+        if corrected_query.string == query_str:
+            return ""
+    except:
+        return ""
+
+    for token in corrected_query.tokens:
+        for variations in (uk_variations, us_variations):
+            if token.original in variations and searcher.ixreader.frequency('exact', variations[token.original]) > 0:
+                token.text = variations[token.original]
+                break
+    corrected_query_str = replace_tokens(query_str, corrected_query.tokens)
+    corrected_qp = QueryParser('stemmed', my_index.search_schema).parse(corrected_query_str)
+    if corrected_qp == qp:
+        return ""
+
+    result = '<h3>Did you mean <a href="{}">{}</a>?</strong></h3>'.format(
+        stateful_url_for('search_form', q_query=urlize(corrected_query_str)),
+        corrected_query.format_string(highlight.HtmlFormatter(classname="change")))
+    return result
+
+
+def replace_tokens(text, tokens):
+    if not tokens:
+        return text
+
+    result = ""
+    endchar = 0
+    for t in tokens:
+        result += text[endchar:t.startchar] + t.text
+        endchar = t.endchar
+    result += text[endchar:]
+    return result
 
 
 def get_html_pagination(page_results):
-    prev_page_num = str(page_results.offset - sessions_per_content_page) if page_results.offset > sessions_per_content_page else None
+    prev_page_num = str(page_results.offset - SESSIONS_PER_CONTENT_PAGE) if page_results.offset > SESSIONS_PER_CONTENT_PAGE else None
     prev_url = stateful_url_for('search_form', page_num=prev_page_num)
     prev = '<a href="{}">← Previous</a>'.format(prev_url) if page_results.offset >= page_results.pagelen else ''
 
@@ -213,17 +255,17 @@ def get_html_pagination(page_results):
     return result
 
 
-def get_session_url(searcher, plain_query):
+def get_optimal_session_url(searcher, query_str):
     hit_order = None
-    shorter_query = re.sub(r'\bsession:"(\d+)[^"]+"', r'session:\1', plain_query)
-    qp = QueryParser(default_field, my_index.search_schema).parse(shorter_query)
+    shorter_query = re.sub(r'\bsession:"(\d+)[^"]+"', r'session:\1', query_str)
+    qp = QueryParser(DEFAULT_FIELD, my_index.search_schema).parse(shorter_query)
     # the limit is purely for efficiency
-    results = searcher.search(qp, limit=maximum_same_session_hits + 1)
+    results = searcher.search(qp, limit=MAXIMUM_SAME_SESSION_HITS + 1)
     if all_same_session(results):
         if results.scored_length() > 1:
             hit_order = 'asc'  # so we can see sessions that span chapters in order
-        plain_query = shorter_query
-    result = stateful_url_for('search_form', q_query=urlize(plain_query), hit_order=hit_order, page_num=None)
+        query_str = shorter_query
+    result = stateful_url_for('search_form', q_query=urlize(query_str), hit_order=hit_order, page_num=None)
     result = re.sub(r'/s/$', r'/', result)
     return result
 
@@ -233,128 +275,173 @@ def all_same_session(results):
     return result
 
 
-def get_html_coverage(highlights, hit, results):
+def get_html_coverage(result_type, hit, highlights):
     full_doc_text = hit['exact']
     num_highlight_paragraphs = highlights.count('\n')
     num_doc_paragraphs = full_doc_text.count('\n\n')
     coverage = num_highlight_paragraphs / num_doc_paragraphs
-    coverage_str = '<span class="coverage" title="excerpts/paragraphs">{}/{} ({}%)</span>'.format(num_highlight_paragraphs, num_doc_paragraphs, round(coverage * 100))
 
     is_copy = False
-    if all_same_session(results) and url_state['excerpt_order'] == 'pos':
-        if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == single_hit_excerpt_limit):
+    if result_type == 'single' and url_state['excerpt_order'] == 'pos':
+        if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == SINGLE_HIT_EXCERPT_LIMIT):
             is_copy = True
-    return is_copy, coverage_str
+
+    if is_copy:
+        num_highlight_paragraphs = min(num_highlight_paragraphs, SINGLE_HIT_COPY_EXCERPT_LIMIT)
+        coverage = num_highlight_paragraphs / num_doc_paragraphs
+    html_coverage = '<span class="coverage" title="excerpts/paragraphs">{}/{} ({}%)</span>'.format(
+        num_highlight_paragraphs, num_doc_paragraphs, round(coverage * 100))
+    result = is_copy, html_coverage
+    return result
 
 
-def get_html_results(plain_query, qp, page_results, highlight_field):
-    result = []
-
+def get_html_results(query_str, qp, page_results, highlight_field, result_type):
+    result = ""
     is_single_page = page_results.total <= page_results.pagelen
     if is_single_page:
-        heading = '<h2 id="results">{} result{} for {}</h2>'.format(page_results.total, 's' if page_results.total > 1 else '', qp)
+        heading = '<h2 id="results">{} result{} for {}</h2>\n'.format(page_results.total, 's' if page_results.total > 1 else '', qp)
     else:
-        heading = '<h2 id="results">Results {} to {} of {} for {}</h2>'.format(page_results.offset + 1, page_results.offset + page_results.pagelen, page_results.total, qp)
-    result.append(heading)
+        heading = '<h2 id="results">Results {} to {} of {} for {}</h2>\n'.format(page_results.offset + 1,
+                                                                                 page_results.offset + page_results.pagelen, page_results.total, qp)
+    result += heading
 
-    description = None
+    page_results.results.fragmenter = ParagraphFragmenter()
+    page_results.results.order = highlight.FIRST if url_state['excerpt_order'] == 'pos' else highlight.SCORE
+    page_results.results.scorer = ConsistentFragmentScorer()
+    page_results.results.formatter = highlight.HtmlFormatter(between='')
+
+    result += '<div class="{}">'.format(result_type)
     for hit_idx, hit in enumerate(page_results):
-        result.append('<div class="hit">')
-        result.append('<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')">►</a>'.format(hit_idx))
+        html_hit = get_html_hit(query_str, highlight_field, page_results, result_type, hit_idx, hit)
+        result += html_hit
+    result += '</div>'
 
-        hit_link = get_single_session_link(hit, plain_query)
-        is_listing_page = highlight_field is None
-        nowhere_to_go = is_listing_page or all_same_session(page_results)
-        if nowhere_to_go:
-            result.append('<span class="heading">{0[book_abbr]} {0[short]}</span>'.format(hit))
-        else:
-            result.append('<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>'.format(hit, hit_link))
+    if result_type == 'single' or page_results.total == 1:
+        more_like = get_html_more_like(query_str, page_results)
+        result += more_like
+    return result
 
-        icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
-        result.append('<span class="icons">')
-        result.append('<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>'.format(hit, icon))
-        result.append('<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>'.format(hit))
-        result.append('</span>')
 
-        highlights = hit.highlights(highlight_field or default_field, top=single_hit_excerpt_limit if all_same_session(page_results) else multiple_hit_excerpt_limit + 1)
-        is_copy, html_coverage = get_html_coverage(highlights, hit, page_results)
-        if all_same_session(page_results):
-            result.append(html_coverage)
+def get_html_hit(query_str, highlight_field, page_results, result_type, hit_idx, hit):
+    result = '<div class="hit">\n'
 
-        result.append('<span class="terms">')
-        for key_term in hit['key_terms'][:5]:
-            term_link = get_single_session_link(hit, key_term)
-            result.append('<a class="key-term" href="{}">{}</a> '.format(term_link, key_term))
-        result.append("</span>")
-        result.append('<br />')
+    html_hit_link = get_single_session_url(query_str, hit)
+    html_hit_heading = get_html_hit_heading(query_str, result_type, hit_idx, hit, html_hit_link)
+    html_excerpts = ""
 
-        result.append('<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>'.format(hit, hit_idx))
-
+    if result_type in ('single', 'multiple'):
+        highlights = hit.highlights(highlight_field or DEFAULT_FIELD, top=SINGLE_HIT_EXCERPT_LIMIT if result_type == 'single' else MULTIPLE_HIT_EXCERPT_LIMIT + 1)
+        is_copy, html_coverage = get_html_coverage(result_type, hit, highlights)
+        if result_type == 'single':
+            html_hit_heading = html_hit_heading.replace('<!--coverage-->', html_coverage)
         if is_copy:
-            result.append("<p>Your search returned many paragraphs in their original order.")
-            result.append("As this would be similar to the copyrighted work, only <strong>sentences</strong> matching the search terms are displayed.")
-            result.append('To view full paragraphs please narrow your search or <a onclick="'
-                          "document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
-                          '" href="javascript:void(0);">sort excerpts by relevance.</a></p>')
+            result += """<h4>These excerpts have been limited due to closely matching the copyrighted work.<br />
+            For full results please <a onclick="document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
+             href="javascript:void(0);">sort excerpts by relevance</a>, or narrow your search.</h4>\n"""
+        html_excerpts = get_html_excerpts(page_results, result_type, hit_idx, html_hit_link, highlights, is_copy)
 
-        hit_description, html_highlights = get_html_highlights(highlights, is_copy, page_results, hit_idx, hit, hit_link)
-        if hit_idx == 0:
-            description = "{} results.  {}".format(page_results.total, hit_description)
-        result.extend(html_highlights)
-        result.append("</div>")
-
-    result = '\n'.join(result)
-    return description, result
+    result += html_hit_heading
+    result += html_excerpts
+    result += '</div>\n'
+    return result
 
 
-def get_html_highlights(highlights, is_copy, page_results, hit_idx, hit, hit_link):
-    result = []
-    description = None
+def get_html_hit_heading(query_str, result_type, hit_idx, hit, html_hit_link):
+    result = '<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')">►</a>\n'.format(hit_idx)
 
-    excerpts = []
+    if result_type == 'multiple':
+        result += '<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>\n'.format(hit, html_hit_link)
+    else:
+        result += '<span class="heading">{0[book_abbr]} {0[short]}</span>\n'.format(hit)
+
+    icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
+    result += '<span class="icons">\n'
+    result += '<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>\n'.format(hit, icon)
+    result += '<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>\n'.format(hit)
+    result += '</span>\n'
+
+    result += '<!--coverage-->\n'
+
+    result += '<span class="terms">\n'
+    for key_term in hit['key_terms'][:5]:
+        term_link = get_single_session_url(key_term, hit)
+        result += '<a class="key-term" href="{}">{}</a> \n'.format(term_link, key_term)
+    result += '</span>\n'
+
+    result += '<br />\n<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>\n'.format(hit, hit_idx)
+    return result
+
+
+def get_html_more_like(query_str, results):
+    try:
+        if results.total == 1:
+            similar_results = results[0].searcher.more_like(results[0].docnum, 'exact', top=5)
+        else:
+            text = ''.join(h['exact'] for h in results)
+            similar_results = results[0].searcher.more_like(None, 'exact', text=text, top=5)
+    except:
+        return ""
+
+    result = '<div class="similar">\n'
+    result += '<h2>Similar sessions</h2>\n'
+    for a_hit_idx, a_hit in enumerate(similar_results):
+        result += '<div class="similar-hit">\n'
+        heading = get_html_hit_heading(query_str, 'list', 'more{}'.format(a_hit_idx), a_hit, None)
+        result += heading
+        result += '</div>\n'
+    result += '</div>\n'
+    return result
+
+
+def get_html_excerpts(page_results, result_type, hit_idx, hit_link, highlights, is_copy):
+    global og_description
+    result = '<ul class="excerpts">\n'
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
-        if not all_same_session(page_results) and p_idx == multiple_hit_excerpt_limit:
-            excerpts.append('<li><p><a href="{}"> More... </a></p></li>'.format(hit_link))
+        if is_copy and p_idx == SINGLE_HIT_COPY_EXCERPT_LIMIT:
+            break
+
+        if result_type == 'multiple' and p_idx == MULTIPLE_HIT_EXCERPT_LIMIT:
+            result += '<li><p><a href="{}"> More... </a></p></li>\n'.format(hit_link)
             continue
 
         paragraph = commonmark(cm_paragraph).strip()
 
-        is_first_hit = page_results.pagenum == 1 and hit_idx == 0 and p_idx < excerpt_omission_threshold
-        gets_full_paragraph = not is_copy and (all_same_session(page_results) or is_first_hit)
+        if hit_idx == 0 and p_idx == 0:
+            description = BeautifulSoup(paragraph, 'lxml').text.strip()
+            og_description = description
+            if page_results.total > 1:
+                og_description = "{} results.  {}".format(page_results.total, og_description)
+
+        is_first_hit_ps = page_results.pagenum == 1 and hit_idx == 0 and p_idx < EXCERPT_OMISSION_THRESHOLD
+        gets_full_paragraph = not is_copy and (result_type == 'single' or is_first_hit_ps)
         if gets_full_paragraph:
-            excerpts.append("<li>{}</li>".format(paragraph))
-            if p_idx == 0:
-                description = BeautifulSoup(paragraph, 'lxml').text.strip()
+            result += '<li>{}</li>\n'.format(paragraph)
         else:
-            if p_idx == excerpt_omission_threshold:
-                excerpts.append("</ul><hr>")
-                excerpts.append('<ul class="excerpts">')
+            if p_idx == EXCERPT_OMISSION_THRESHOLD:
+                result += '</ul>\n<hr>\n<ul class="excerpts">\n'
             sentences = get_sentence_fragments(paragraph)
-            if all_same_session(page_results):
+            if result_type == 'single':
                 excerpt = ' [...] '.join(sentences)
             else:
                 excerpt = '<a href="{}" class="omission"> [...] </a>'.format(hit_link).join(sentences)
-            excerpts.append("<li><p>{}</p></li>".format(excerpt))
+            result += '<li><p>{}</p></li>\n'.format(excerpt)
 
-    if excerpts:
-        result.append('<ul class="excerpts">')
-        result.extend(excerpts)
-        result.append("</ul>")
-    return description, result
+    result += '</ul>\n'
+    return result
 
 
-def get_single_session_link(hit, plain_query):
+def get_single_session_url(query_str, hit):
     if hit['session']:
         session = re.sub(r'[^\w’]', ' ', hit['session'])
         session = re.sub(r'\s+', ' ', session).strip()
         session = re.sub(r'^session ', r'', session, flags=re.IGNORECASE)
-        q_query = urlize('session:"{}" {}'.format(session, plain_query), in_href=True)
+        q_query = urlize('session:"{}" {}'.format(session, query_str), in_href=True)
         result = stateful_url_for('search_form', q_query=q_query, page_num=None) + 's/'
     else:
         # a bit hackish, in this case 'short' happens to be only the heading
         heading = re.sub(r'[^\w’]', ' ', hit['short'])
         heading = re.sub(r'\s+', ' ', heading).strip()
-        q_query = urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, plain_query), in_href=True)
+        q_query = urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, query_str), in_href=True)
         result = stateful_url_for('search_form', q_query=q_query, page_num=None) + 's/'
     return result
 
@@ -384,7 +471,7 @@ def get_sentence_fragments(paragraph):
         sentence = re.sub(r'^<li>|</li>$', r'', sentence)
 
         if is_italics and not sentence.startswith('<em>'):
-            sentence = "<em>{}</em>".format(sentence)
+            sentence = '<em>{}</em>'.format(sentence)
 
         is_adjacent = s_idx - 1 == last_match_idx
         if is_adjacent:
@@ -426,6 +513,15 @@ def test():
         pass
 
 
+def load_uk_us_variations():
+    for line in open(r'uk_us_variations.txt', encoding='utf-8', mode='r').readlines():
+        uk, us = line.strip().split(' ')
+        uk_variations[uk] = us
+        us_variations[us] = uk
+        uk_us_variations.add(uk)
+        uk_us_variations.add(us)
+
+
 def main():
     global ix
     os.chdir(sys.path[0])
@@ -450,4 +546,9 @@ def main():
         ix = get_idx(index_dir)
 
 
+og_description = ""
+uk_variations = {}
+us_variations = {}
+uk_us_variations = set()
+load_uk_us_variations()
 main()
