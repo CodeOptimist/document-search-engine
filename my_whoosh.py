@@ -2,7 +2,60 @@ from whoosh.analysis import RegexTokenizer, LowercaseFilter, StopFilter, STOP_WO
 from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
 from whoosh.scoring import BM25F
 from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
 import re
+
+
+def get_sentence_fragments(paragraph):
+    paragraph_soup = BeautifulSoup(paragraph, 'lxml')
+
+    result = []
+    sentence_split = filter(None, re.split(r'(.*?(?:\.”|(?<!\b\w)(?<!\b(?:Dr|Sr|Jr|Mr|Ms))(?<!\bMrs)\.|[?!])[\s$])', paragraph))
+    last_match_idx = None
+    raw_sentence = ''
+    for s_idx, raw_sentence in enumerate(sentence_split):
+        raw_sentence = raw_sentence.strip('\n')
+
+        if 'class="match ' not in raw_sentence:
+            if s_idx == 0:
+                result.append('')
+            continue
+
+        sentence_soup = BeautifulSoup(raw_sentence, 'lxml')
+        deepest_sentence_tag = get_deepest_tag(sentence_soup, paragraph_soup)
+        is_italics = deepest_sentence_tag.name == 'em' or any(tag.name == 'em' for tag in deepest_sentence_tag.parents)
+
+        sentence = str(sentence_soup.body)
+        sentence = re.sub(r'^<body>|</body>$', r'', sentence)
+        sentence = re.sub(r'^<p>|</p>$', r'', sentence)
+        sentence = re.sub(r'^<li>|</li>$', r'', sentence)
+
+        if is_italics and not sentence.startswith('<em>'):
+            sentence = '<em>{}</em>'.format(sentence)
+
+        is_adjacent = s_idx - 1 == last_match_idx
+        if is_adjacent:
+            result[-1] += sentence
+        else:
+            result.append(sentence)
+        last_match_idx = s_idx
+    if 'class="match ' not in raw_sentence:
+        result.append('')
+    return result
+
+
+def get_deepest_tag(needle_soup, haystack_soup):
+    punctuation_ends_re = r'(^\W+|\W+$)'
+    needle_strings = re.sub(punctuation_ends_re, '', ''.join(needle_soup.strings))
+
+    result = None
+    for tag in haystack_soup.find_all(True):
+        tag_strings = re.sub(punctuation_ends_re, '', ''.join(tag.strings))
+        if needle_strings in tag_strings:
+            result = tag
+
+    assert result
+    return result
 
 
 class ParagraphFragmenter(Fragmenter):

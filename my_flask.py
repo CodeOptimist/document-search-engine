@@ -20,13 +20,13 @@ from whoosh.scoring import BM25F
 
 import my_index
 from books import Books
-from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer, DescDateBM25F, AscDateBM25F
+from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer, DescDateBM25F, AscDateBM25F, get_sentence_fragments
 
 app = Flask(__name__)
 # occasionally a single session straddles 2 chapters, which are different hits
 MAXIMUM_SAME_SESSION_HITS = 2
-SESSIONS_PER_CONTENT_PAGE = 10
-SESSIONS_PER_LISTING_PAGE = 150
+HITS_PER_CONTENT_PAGE = 10
+HITS_PER_LISTING_PAGE = 150
 MULTIPLE_HIT_EXCERPT_LIMIT = 3
 SINGLE_HIT_EXCERPT_LIMIT = 50    # effectively ALL of them, I would think
 SINGLE_HIT_COPY_EXCERPT_LIMIT = 10
@@ -153,7 +153,7 @@ def get_valid_num(num):
         num = int(num or 0)
         if num < 0:
             raise ValueError
-        result = int(num / SESSIONS_PER_CONTENT_PAGE) + 1
+        result = int(num / HITS_PER_CONTENT_PAGE) + 1
         return False, result
     except ValueError:
         return True, None
@@ -185,10 +185,10 @@ def search_whoosh(query_str):
                 break
 
         if highlight_field is None:
-            page_results = searcher.search_page(qp, pagenum=1, pagelen=SESSIONS_PER_LISTING_PAGE)
+            page_results = searcher.search_page(qp, pagenum=1, pagelen=HITS_PER_LISTING_PAGE)
             result_type = 'listing'
         else:
-            page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=SESSIONS_PER_CONTENT_PAGE)
+            page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=HITS_PER_CONTENT_PAGE)
             result_type = 'single' if all_same_session(page_results) else 'multiple'
 
         og_description = ""
@@ -208,18 +208,24 @@ def get_html_correction(searcher, query_str, qp):
     exact_qp = exact_qp.parse(query_str)
     try:
         corrected_query = searcher.correct_query(exact_qp, query_str, prefix=1)
-        if corrected_query.string == query_str:
-            return ""
     except:
         return ""
 
     for token in corrected_query.tokens:
+        # is this some sort of bug with Whoosh? startchar:8, endchar:9 original:'tes?' the hell?
+        if query_str[token.startchar:token.endchar] != token.original:
+            return ""
         for variations in (uk_variations, us_variations):
             if token.original in variations and searcher.ixreader.frequency('exact', variations[token.original]) > 0:
                 token.text = variations[token.original]
                 break
+        # not sure this code ever gets a chance to run due to above possible bug
+        if re.search(r'\W', token.original):
+            token.text = token.original
     corrected_query_str = replace_tokens(query_str, corrected_query.tokens)
-    corrected_qp = QueryParser('stemmed', my_index.search_schema).parse(corrected_query_str)
+    corrected_qp = QueryParser('stemmed', my_index.search_schema)
+    corrected_qp.add_plugin(DateParserPlugin())
+    corrected_qp = corrected_qp.parse(corrected_query_str)
     if corrected_qp == qp:
         return ""
 
@@ -243,7 +249,7 @@ def replace_tokens(text, tokens):
 
 
 def get_html_pagination(page_results):
-    prev_page_num = str(page_results.offset - SESSIONS_PER_CONTENT_PAGE) if page_results.offset > SESSIONS_PER_CONTENT_PAGE else None
+    prev_page_num = str(page_results.offset - HITS_PER_CONTENT_PAGE) if page_results.offset > HITS_PER_CONTENT_PAGE else None
     prev_url = stateful_url_for('search_form', page_num=prev_page_num)
     prev = '<a href="{}">← Previous</a>'.format(prev_url) if page_results.offset >= page_results.pagelen else ''
 
@@ -317,7 +323,7 @@ def get_html_results(query_str, qp, page_results, highlight_field, result_type):
     result += '</div>'
 
     if result_type == 'single' or page_results.total == 1:
-        more_like = get_html_more_like(query_str, page_results)
+        more_like = get_html_more_like(page_results)
         result += more_like
     return result
 
@@ -326,11 +332,12 @@ def get_html_hit(query_str, highlight_field, page_results, result_type, hit_idx,
     result = '<div class="hit">\n'
 
     html_hit_link = get_single_session_url(query_str, hit)
-    html_hit_heading = get_html_hit_heading(query_str, result_type, hit_idx, hit, html_hit_link)
-    html_excerpts = ""
+    html_hit_heading = get_html_hit_heading(result_type, "hit-{}".format(hit_idx), hit, html_hit_link)
 
+    html_excerpts = ""
     if result_type in ('single', 'multiple'):
-        highlights = hit.highlights(highlight_field or DEFAULT_FIELD, top=SINGLE_HIT_EXCERPT_LIMIT if result_type == 'single' else MULTIPLE_HIT_EXCERPT_LIMIT + 1)
+        limit = SINGLE_HIT_EXCERPT_LIMIT if result_type == 'single' else MULTIPLE_HIT_EXCERPT_LIMIT + 1
+        highlights = hit.highlights(highlight_field or DEFAULT_FIELD, top=limit)
         is_copy, html_coverage = get_html_coverage(result_type, hit, highlights)
         if result_type == 'single':
             html_hit_heading = html_hit_heading.replace('<!--coverage-->', html_coverage)
@@ -346,8 +353,8 @@ def get_html_hit(query_str, highlight_field, page_results, result_type, hit_idx,
     return result
 
 
-def get_html_hit_heading(query_str, result_type, hit_idx, hit, html_hit_link):
-    result = '<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'hit-{}-long\')">►</a>\n'.format(hit_idx)
+def get_html_hit_heading(result_type, hit_id, hit, html_hit_link):
+    result = '<a href="javascript:void(0)" class="display-toggle" onclick="toggleDisplay(this, \'{}-long\')">►</a>\n'.format(hit_id)
 
     if result_type == 'multiple':
         result += '<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>\n'.format(hit, html_hit_link)
@@ -368,11 +375,11 @@ def get_html_hit_heading(query_str, result_type, hit_idx, hit, html_hit_link):
         result += '<a class="key-term" href="{}">{}</a> \n'.format(term_link, key_term)
     result += '</span>\n'
 
-    result += '<br />\n<span class="hit-long" id="hit-{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>\n'.format(hit, hit_idx)
+    result += '<br />\n<span class="hit-long" id="{1}-long" style="display: none">- {0[book_name]}<br />{0[long]}</span>\n'.format(hit, hit_id)
     return result
 
 
-def get_html_more_like(query_str, results):
+def get_html_more_like(results):
     try:
         if results.total == 1:
             similar_results = results[0].searcher.more_like(results[0].docnum, 'exact', top=5)
@@ -384,9 +391,9 @@ def get_html_more_like(query_str, results):
 
     result = '<div class="similar">\n'
     result += '<h2>Similar sessions</h2>\n'
-    for a_hit_idx, a_hit in enumerate(similar_results):
+    for hit_idx, hit in enumerate(similar_results):
         result += '<div class="similar-hit">\n'
-        heading = get_html_hit_heading(query_str, 'list', 'more{}'.format(a_hit_idx), a_hit, None)
+        heading = get_html_hit_heading('list', 'similar-{}'.format(hit_idx), hit, None)
         result += heading
         result += '</div>\n'
     result += '</div>\n'
@@ -407,13 +414,10 @@ def get_html_excerpts(page_results, result_type, hit_idx, hit_link, highlights, 
         paragraph = commonmark(cm_paragraph).strip()
 
         if hit_idx == 0 and p_idx == 0:
-            description = BeautifulSoup(paragraph, 'lxml').text.strip()
-            og_description = description
-            if page_results.total > 1:
-                og_description = "{} results.  {}".format(page_results.total, og_description)
+            update_og_description(page_results.total, paragraph)
 
-        is_first_hit_ps = page_results.pagenum == 1 and hit_idx == 0 and p_idx < EXCERPT_OMISSION_THRESHOLD
-        gets_full_paragraph = not is_copy and (result_type == 'single' or is_first_hit_ps)
+        is_first_hit_preview = page_results.pagenum == 1 and hit_idx == 0 and p_idx < EXCERPT_OMISSION_THRESHOLD
+        gets_full_paragraph = (result_type == 'single' or is_first_hit_preview) and not is_copy
         if gets_full_paragraph:
             result += '<li>{}</li>\n'.format(paragraph)
         else:
@@ -430,6 +434,13 @@ def get_html_excerpts(page_results, result_type, hit_idx, hit_link, highlights, 
     return result
 
 
+def update_og_description(num_results, paragraph):
+    global og_description
+    og_description = BeautifulSoup(paragraph, 'lxml').text.strip()
+    if num_results > 1:
+        og_description = "{} results.  {}".format(num_results, og_description)
+
+
 def get_single_session_url(query_str, hit):
     if hit['session']:
         session = re.sub(r'[^\w’]', ' ', hit['session'])
@@ -443,58 +454,6 @@ def get_single_session_url(query_str, hit):
         heading = re.sub(r'\s+', ' ', heading).strip()
         q_query = urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, query_str), in_href=True)
         result = stateful_url_for('search_form', q_query=q_query, page_num=None) + 's/'
-    return result
-
-
-def get_sentence_fragments(paragraph):
-    paragraph_soup = BeautifulSoup(paragraph, 'lxml')
-
-    result = []
-    sentence_split = filter(None, re.split(r'(.*?(?:\.”|(?<!\b\w)(?<!\b(?:Dr|Sr|Jr|Mr|Ms))(?<!\bMrs)\.|[?!])[\s$])', paragraph))
-    last_match_idx = None
-    raw_sentence = ''
-    for s_idx, raw_sentence in enumerate(sentence_split):
-        raw_sentence = raw_sentence.strip('\n')
-
-        if 'class="match ' not in raw_sentence:
-            if s_idx == 0:
-                result.append('')
-            continue
-
-        sentence_soup = BeautifulSoup(raw_sentence, 'lxml')
-        deepest_sentence_tag = get_deepest_tag(sentence_soup, paragraph_soup)
-        is_italics = deepest_sentence_tag.name == 'em' or any(tag.name == 'em' for tag in deepest_sentence_tag.parents)
-
-        sentence = str(sentence_soup.body)
-        sentence = re.sub(r'^<body>|</body>$', r'', sentence)
-        sentence = re.sub(r'^<p>|</p>$', r'', sentence)
-        sentence = re.sub(r'^<li>|</li>$', r'', sentence)
-
-        if is_italics and not sentence.startswith('<em>'):
-            sentence = '<em>{}</em>'.format(sentence)
-
-        is_adjacent = s_idx - 1 == last_match_idx
-        if is_adjacent:
-            result[-1] += sentence
-        else:
-            result.append(sentence)
-        last_match_idx = s_idx
-    if 'class="match ' not in raw_sentence:
-        result.append('')
-    return result
-
-
-def get_deepest_tag(needle_soup, haystack_soup):
-    punctuation_ends_re = r'(^\W+|\W+$)'
-    needle_strings = re.sub(punctuation_ends_re, '', ''.join(needle_soup.strings))
-
-    result = None
-    for tag in haystack_soup.find_all(True):
-        tag_strings = re.sub(punctuation_ends_re, '', ''.join(tag.strings))
-        if needle_strings in tag_strings:
-            result = tag
-
-    assert result
     return result
 
 
