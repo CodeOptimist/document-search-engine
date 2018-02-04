@@ -1,4 +1,26 @@
-from whoosh.analysis import RegexTokenizer, LowercaseFilter, StopFilter, STOP_WORDS, default_pattern, Filter, StemFilter, stem
+# Copyright (c) 2018 Christopher Galpin
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
+# this file is not licensed under https://github.com/CodeOptimist/whoosh-galpin/blob/master/LICENSE
+# it's MIT licensed (given above) for folding into Whoosh proper
 from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
 from whoosh.scoring import BM25F
 from datetime import datetime, timedelta
@@ -104,6 +126,7 @@ class ConsistentFragmentScorer(BasicFragmentScorer):
 
 class DateBM25F(BM25F):
     use_final = True
+
     def final(self, searcher, docnum, score):
         fields = searcher.stored_fields(docnum)
         score = 1 - 1 / score
@@ -129,31 +152,3 @@ class DescDateBM25F(DateBM25F):
 
 class AscDateBM25F(DateBM25F):
     pass
-
-
-def CleanupStandardAnalyzer(expression=default_pattern, stoplist=STOP_WORDS, minsize=2, maxsize=None, gaps=False):
-    ret = RegexTokenizer(expression=expression, gaps=gaps)
-    # added CleanupFilter here
-    chain = ret | CleanupFilter() | LowercaseFilter()
-    if stoplist is not None:
-        chain = chain | StopFilter(stoplist=stoplist, minsize=minsize, maxsize=maxsize)
-    return chain
-
-
-def CleanupStemmingAnalyzer(expression=default_pattern, stoplist=STOP_WORDS,
-                     minsize=2, maxsize=None, gaps=False, stemfn=stem,
-                     ignore=None, cachesize=50000):
-
-    ret = RegexTokenizer(expression=expression, gaps=gaps)
-    # added CleanupFilter here
-    chain = ret | CleanupFilter() | LowercaseFilter()
-    if stoplist is not None:
-        chain = chain | StopFilter(stoplist=stoplist, minsize=minsize, maxsize=maxsize)
-    return chain | StemFilter(stemfn=stemfn, ignore=ignore, cachesize=cachesize)
-
-
-class CleanupFilter(Filter):
-    def __call__(self, tokens):
-        for t in tokens:
-            t.text = t.text.replace(r'*', '')
-            yield t

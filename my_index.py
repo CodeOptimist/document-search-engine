@@ -8,7 +8,7 @@ from whoosh.fields import ID, TEXT, Schema, STORED, DATETIME
 from whoosh.support.charset import accent_map
 
 from books import Books
-from my_whoosh import CleanupStandardAnalyzer, CleanupStemmingAnalyzer
+from mod_whoosh import CleanupStandardAnalyzer, CleanupStemmingAnalyzer
 
 
 # todo manually search for and fix these where a misplaced asterisk breaks italics: \*[^*]*? \*
