@@ -34,7 +34,7 @@ def pre_process_book(book, text):
     return text
 
 
-def clean_header(_text):
+def clean_heading(_text):
     text = _text.replace('\(', '(').replace('\)', ')').replace('\[', '[').replace('\]', ']')
     text = re.sub('[*#>]+', '', text)
     text = re.sub(r'[ \xa0\n]+', r' ', text)
@@ -135,18 +135,18 @@ def title(_text):
     return text
 
 
-def update_heading_tiers(book, tiers, header):
-    # simplify things by only looking at the short part of any header substitutions we did
-    short_header = header.split('\n')[0]
+def update_heading_tiers(book, tiers, heading):
+    # simplify things by only looking at the short part of any heading substitutions we did
+    short_heading = heading.split('\n')[0]
 
     for tier_idx, _ in enumerate(tiers):
         tier_re = book['tier{}'.format(tier_idx)]
 
-        if tier_re['begin'] and re.search(tier_re['begin'], short_header, flags=re.IGNORECASE):
-            short, long = header.split('\n') if '\n' in header else (header, '')
+        if tier_re['begin'] and re.search(tier_re['begin'], short_heading, flags=re.IGNORECASE):
+            short, long = heading.split('\n') if '\n' in heading else (heading, '')
             tiers[tier_idx] = {'short': title(short), 'long': title(long)}
 
-        if tier_re['end'] and re.search(tier_re['end'], short_header, flags=re.IGNORECASE):
+        if tier_re['end'] and re.search(tier_re['end'], short_heading, flags=re.IGNORECASE):
             tiers[tier_idx] = {'short': '', 'long': ''}
 
 
@@ -201,24 +201,24 @@ def create_index(index_dir):
 
         i = 0
         heading_tiers = [{'short': '', 'long': ''}] * 3
-        carry_over_header = None
-        headers = list(filter(None, book['headers_re'].split(text)[1:]))
-        for (_header, _content) in zip(headers[::2], headers[1::2]):
-            content = _header + _content
-            if carry_over_header:
-                content = carry_over_header + content
-                carry_over_header = None
+        carry_over_heading = None
+        headings = list(filter(None, book['headings_re'].split(text)[1:]))
+        for (__heading, _content) in zip(headings[::2], headings[1::2]):
+            content = __heading + _content
+            if carry_over_heading:
+                content = carry_over_heading + content
+                carry_over_heading = None
 
-            header = clean_header(_header)
-            if 'header_replaces' in book:
-                for (pattern, repl) in book['header_replaces']:
-                    header = pattern.sub(repl, header, 1)
+            heading = clean_heading(__heading)
+            if 'heading_replacements' in book:
+                for (pattern, repl) in book['heading_replacements']:
+                    heading = pattern.sub(repl, heading, 1)
 
-            update_heading_tiers(book, heading_tiers, header)
+            update_heading_tiers(book, heading_tiers, heading)
 
             has_content = re.search(r'[a-z]', _content)
             if not has_content:
-                carry_over_header = content
+                carry_over_heading = content
                 continue
 
             add_document(writer, d, heading_tiers, content)
