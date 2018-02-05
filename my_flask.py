@@ -32,6 +32,8 @@ SINGLE_HIT_EXCERPT_LIMIT = 50    # effectively ALL of them, I would think
 SINGLE_HIT_COPY_EXCERPT_LIMIT = 10
 EXCERPT_OMISSION_THRESHOLD = max(SINGLE_HIT_EXCERPT_LIMIT, MULTIPLE_HIT_EXCERPT_LIMIT)
 DEFAULT_FIELD = 'stemmed'
+state = {}
+url_state = {}
 
 
 @app.template_filter('volumes_link')
@@ -45,11 +47,25 @@ def book_link(book):
     return get_html_book_link((book['abbr'], book['name']))
 
 
+def computed_hit_order(of='default'):
+    val = url_state['hit_order'] if of == 'default' else of
+    if val is None:
+        return 'rel'
+    return val
+
+
+def computed_excerpt_order(of='default'):
+    val = url_state['excerpt_order'] if of == 'default' else of
+    if val is None and 'result_type' in state:
+        return 'pos' if state['result_type'] == 'single' else 'rel'
+    return val
+
+
 @app.context_processor
 def template_functions():
     def example(q, desc):
         return '<a href="/q/{}/" title="{}">{}</a>'.format(urlize(q, in_href=True), html.escape(desc), q)
-    return dict(example=example)
+    return dict(example=example, computed_hit_order=computed_hit_order, computed_excerpt_order=computed_excerpt_order)
 
 
 def pretty_redirect(url):
@@ -89,9 +105,6 @@ def urlize(s, in_href=False, undo=False):
     return s
 
 
-url_state = {}
-
-
 # order is important, url_for() returns the last matching
 @app.route('/q/', methods=['GET', 'POST'])
 @app.route('/', methods=['GET', 'POST'])
@@ -109,14 +122,15 @@ url_state = {}
 @app.route('/q/<q_query>/h/<hit_order>/e/<excerpt_order>/', methods=['GET', 'POST'])
 @app.route('/q/<q_query>/h/<hit_order>/e/<excerpt_order>/<page_num>/', methods=['GET', 'POST'])
 def search_form(os_query=None, q_query=None, hit_order=None, excerpt_order=None, page_num=None):
+    state.clear()
     url_state.update(locals().copy())
 
     # redirect POST to GET
     if request.method == 'POST':
         q_query = urlize(request.form['query'])
         _, hit_order, excerpt_order = get_valid_order(request.form['hit-order'], request.form['excerpt-order'])
-        hit_order = None if hit_order == 'rel' else hit_order
-        excerpt_order = None if excerpt_order == 'rel' else excerpt_order
+        hit_order = hit_order if 'explicit-hit-order' in request.form else None
+        excerpt_order = excerpt_order if 'explicit-excerpt-order' in request.form else None
         return pretty_redirect(url_for('search_form', q_query=q_query, hit_order=hit_order, excerpt_order=excerpt_order))
 
     if request.method == 'GET':
@@ -160,7 +174,7 @@ def get_valid_num(num):
 
 
 def search_whoosh(query_str):
-    weighting = AscDateBM25F if url_state['hit_order'] == 'asc' else DescDateBM25F if url_state['hit_order'] == 'desc' else BM25F
+    weighting = AscDateBM25F if computed_hit_order() == 'asc' else DescDateBM25F if computed_hit_order() == 'desc' else BM25F
     with ix.searcher(weighting=weighting) as searcher:
         to_session = request.base_url.endswith('/s/')
         if to_session:
@@ -186,19 +200,23 @@ def search_whoosh(query_str):
 
         if highlight_field is None:
             page_results = searcher.search_page(qp, pagenum=1, pagelen=HITS_PER_LISTING_PAGE)
-            result_type = 'listing'
+            state['result_type'] = 'listing'
         else:
             page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=HITS_PER_CONTENT_PAGE)
-            result_type = 'single' if all_same_session(page_results) else 'multiple'
+            state['result_type'] = 'single' if all_same_session(page_results) else 'multiple'
 
         og_description = ""
-        result = {
-            'correction': get_html_correction(searcher, query_str, qp),
-            'results': get_html_results(query_str, qp, page_results, highlight_field, result_type),
-            'description': og_description,
-            'pagination': get_html_pagination(page_results),
-        }
-        result['scroll'] = None if result['correction'] else "results"
+        try:
+            result = {
+                'results': get_html_results(query_str, qp, page_results, highlight_field),
+                'correction': get_html_correction(searcher, query_str, qp),
+                'description': og_description,
+                'pagination': get_html_pagination(page_results),
+            }
+            result['scroll'] = None if result['correction'] else "results"
+        except DocumentCopy:
+            return stateful_redirect('search_form', excerpt_order='rel')
+
         return render_template("search-form.html", **url_state, **result, query_str=query_str, books=Books.indexed, doc_count=ix.doc_count())
 
 
@@ -281,14 +299,14 @@ def all_same_session(results):
     return result
 
 
-def get_html_coverage(result_type, hit, highlights):
+def get_html_coverage(hit, highlights):
     full_doc_text = hit['exact']
     num_highlight_paragraphs = highlights.count('\n')
     num_doc_paragraphs = full_doc_text.count('\n\n')
     coverage = num_highlight_paragraphs / num_doc_paragraphs
 
     is_copy = False
-    if result_type == 'single' and url_state['excerpt_order'] == 'pos':
+    if state['result_type'] == 'single' and computed_excerpt_order() == 'pos':
         if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == SINGLE_HIT_EXCERPT_LIMIT):
             is_copy = True
 
@@ -301,7 +319,7 @@ def get_html_coverage(result_type, hit, highlights):
     return result
 
 
-def get_html_results(query_str, qp, page_results, highlight_field, result_type):
+def get_html_results(query_str, qp, page_results, highlight_field):
     result = ""
     is_single_page = page_results.total <= page_results.pagelen
     if is_single_page:
@@ -312,40 +330,47 @@ def get_html_results(query_str, qp, page_results, highlight_field, result_type):
     result += heading
 
     page_results.results.fragmenter = ParagraphFragmenter()
-    page_results.results.order = highlight.FIRST if url_state['excerpt_order'] == 'pos' else highlight.SCORE
+    page_results.results.order = highlight.FIRST if computed_excerpt_order() == 'pos' else highlight.SCORE
     page_results.results.scorer = ConsistentFragmentScorer()
     page_results.results.formatter = highlight.HtmlFormatter(between='')
 
-    result += '<div class="{}">'.format(result_type)
+    result += '<div class="{}">'.format(state['result_type'])
     for hit_idx, hit in enumerate(page_results):
-        html_hit = get_html_hit(query_str, highlight_field, page_results, result_type, hit_idx, hit)
+        html_hit = get_html_hit(query_str, highlight_field, page_results, hit_idx, hit)
         result += html_hit
     result += '</div>'
 
-    if result_type == 'single' or page_results.total == 1:
+    if state['result_type'] == 'single' or page_results.total == 1:
         more_like = get_html_more_like(page_results)
         result += more_like
     return result
 
 
-def get_html_hit(query_str, highlight_field, page_results, result_type, hit_idx, hit):
+class DocumentCopy(Exception):
+    pass
+
+
+def get_html_hit(query_str, highlight_field, page_results, hit_idx, hit):
     result = '<div class="hit">\n'
 
     html_hit_link = get_single_session_url(query_str, hit)
-    html_hit_heading = get_html_hit_heading(result_type, "hit-{}".format(hit_idx), hit, html_hit_link)
+    html_hit_heading = get_html_hit_heading(state['result_type'], "hit-{}".format(hit_idx), hit, html_hit_link)
 
     html_excerpts = ""
-    if result_type in ('single', 'multiple'):
-        limit = SINGLE_HIT_EXCERPT_LIMIT if result_type == 'single' else MULTIPLE_HIT_EXCERPT_LIMIT + 1
+    if state['result_type'] in ('single', 'multiple'):
+        limit = SINGLE_HIT_EXCERPT_LIMIT if state['result_type'] == 'single' else MULTIPLE_HIT_EXCERPT_LIMIT + 1
         highlights = hit.highlights(highlight_field or DEFAULT_FIELD, top=limit)
-        is_copy, html_coverage = get_html_coverage(result_type, hit, highlights)
-        if result_type == 'single':
+        is_copy, html_coverage = get_html_coverage(hit, highlights)
+        if state['result_type'] == 'single':
             html_hit_heading = html_hit_heading.replace('<!--coverage-->', html_coverage)
         if is_copy:
+            is_ordered_implicitly = url_state['excerpt_order'] is None
+            if is_ordered_implicitly:
+                raise DocumentCopy
             result += """<h4>These excerpts have been limited due to closely matching the copyrighted work.<br />
             For full results please <a onclick="document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
              href="javascript:void(0);">sort excerpts by relevance</a>, or narrow your search.</h4>\n"""
-        html_excerpts = get_html_excerpts(page_results, result_type, hit_idx, html_hit_link, highlights, is_copy)
+        html_excerpts = get_html_excerpts(page_results, hit_idx, html_hit_link, highlights, is_copy)
 
     result += html_hit_heading
     result += html_excerpts
@@ -358,8 +383,10 @@ def get_html_hit_heading(result_type, hit_id, hit, html_hit_link):
 
     if result_type == 'multiple':
         result += '<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>\n'.format(hit, html_hit_link)
-    else:
+    elif result_type in ('single', 'listing'):
         result += '<span class="heading">{0[book_abbr]} {0[short]}</span>\n'.format(hit)
+    else:
+        raise AssertionError
 
     icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
     result += '<span class="icons">\n'
@@ -393,21 +420,21 @@ def get_html_more_like(results):
     result += '<h2>Similar sessions</h2>\n'
     for hit_idx, hit in enumerate(similar_results):
         result += '<div class="similar-hit">\n'
-        heading = get_html_hit_heading('list', 'similar-{}'.format(hit_idx), hit, None)
+        heading = get_html_hit_heading('listing', 'similar-{}'.format(hit_idx), hit, None)
         result += heading
         result += '</div>\n'
     result += '</div>\n'
     return result
 
 
-def get_html_excerpts(page_results, result_type, hit_idx, hit_link, highlights, is_copy):
+def get_html_excerpts(page_results, hit_idx, hit_link, highlights, is_copy):
     global og_description
     result = '<ul class="excerpts">\n'
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
         if is_copy and p_idx == SINGLE_HIT_COPY_EXCERPT_LIMIT:
             break
 
-        if result_type == 'multiple' and p_idx == MULTIPLE_HIT_EXCERPT_LIMIT:
+        if state['result_type'] == 'multiple' and p_idx == MULTIPLE_HIT_EXCERPT_LIMIT:
             result += '<li><p><a href="{}"> More... </a></p></li>\n'.format(hit_link)
             continue
 
@@ -417,14 +444,14 @@ def get_html_excerpts(page_results, result_type, hit_idx, hit_link, highlights, 
             update_og_description(page_results.total, paragraph)
 
         is_first_hit_preview = page_results.pagenum == 1 and hit_idx == 0 and p_idx < EXCERPT_OMISSION_THRESHOLD
-        gets_full_paragraph = (result_type == 'single' or is_first_hit_preview) and not is_copy
+        gets_full_paragraph = (state['result_type'] == 'single' or is_first_hit_preview) and not is_copy
         if gets_full_paragraph:
             result += '<li>{}</li>\n'.format(paragraph)
         else:
             if p_idx == EXCERPT_OMISSION_THRESHOLD:
                 result += '</ul>\n<hr>\n<ul class="excerpts">\n'
             sentences = get_sentence_fragments(paragraph)
-            if result_type == 'single':
+            if state['result_type'] == 'single':
                 excerpt = ' [...] '.join(sentences)
             else:
                 excerpt = '<a href="{}" class="omission"> [...] </a>'.format(hit_link).join(sentences)

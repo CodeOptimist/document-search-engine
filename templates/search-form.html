@@ -151,42 +151,46 @@
     <input id="submit" type="submit" value="Search">
     {{ correction|safe }}
     <p>Hit order:
-        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" value="rel" required{% if hit_order not in ('asc', 'desc') %} checked{% endif %}> relevance</label>
-        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" value="asc"{% if hit_order == 'asc' %} checked{% endif %}> earliest</label>
-        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" value="desc"{% if hit_order == 'desc' %} checked{% endif %}> latest</label>
+        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" id="hit-order-rel" value="rel" required{% if computed_hit_order() not in ('asc', 'desc') %} checked{% endif %}> relevance</label>
+        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" id="hit-order-asc" value="asc"{% if computed_hit_order() == 'asc' %} checked{% endif %}> earliest</label>
+        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" id="hit-order-desc" value="desc"{% if computed_hit_order() == 'desc' %} checked{% endif %}> latest</label>
+        <input type="checkbox" name="explicit-hit-order" id="explicit-hit-order" hidden>
     </p>
     <p>Excerpt order:
-        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-rel" value="rel" required{% if excerpt_order != 'pos' %} checked{% endif %}> relevance</label>
-        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-pos" value="pos"{% if excerpt_order == 'pos' %} checked{% endif %}> position</label>
+        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-rel" value="rel" required{% if computed_excerpt_order() != 'pos' %} checked{% endif %}> relevance</label>
+        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-pos" value="pos"{% if computed_excerpt_order() == 'pos' %} checked{% endif %}> position</label>
+        <input type="checkbox" name="explicit-excerpt-order" id="explicit-excerpt-order" hidden>
     </p>
     <script>
-    {% if hit_order is none and excerpt_order is none %}
-    var autoExcerptOrder = true;
-    document.getElementById('excerpt-order-rel').style.opacity = 0.5;
+    function fadeInputs(name, opacity) {
+        inputs = document.getElementsByTagName("input");
+        for (i = 0; i < inputs.length; i++) {
+            var input = inputs[i];
+            if (input.name == name)
+                input.style.opacity = opacity;
+        }
+    }
+    
+    {% if hit_order is none %}
+    fadeInputs('hit-order', 0.5);
     {% else %}
-    var autoExcerptOrder = false;
+    document.getElementById('explicit-hit-order').checked = true;
+    {% endif %}
+
+    {% if excerpt_order is none %}
+    fadeInputs('excerpt-order', 0.5);
+    {% else %}
+    document.getElementById('explicit-excerpt-order').checked = true;
     {% endif %}
 
     function hitOrder(radio) {
-        if (autoExcerptOrder) {
-            if (['asc', 'desc'].includes(radio.value)) {
-                document.getElementById('excerpt-order-rel').style.opacity = 1.0;
-                document.getElementById('excerpt-order-pos').style.opacity = 0.5;
-                document.getElementById('excerpt-order-pos').checked = true;
-            } else {
-                document.getElementById('excerpt-order-pos').style.opacity = 1.0;
-                document.getElementById('excerpt-order-rel').style.opacity = 0.5;
-                document.getElementById('excerpt-order-rel').checked = true;
-            }
-        }
+        fadeInputs('hit-order', 1.0);
+        document.getElementById('explicit-hit-order').checked = true;
     }
 
     function excerptOrder(radio) {
-        if (autoExcerptOrder) {
-            autoExcerptOrder = false;
-            document.getElementById('excerpt-order-rel').style.opacity = 1.0;
-            document.getElementById('excerpt-order-pos').style.opacity = 1.0;
-        }
+        fadeInputs('excerpt-order', 1.0);
+        document.getElementById('explicit-excerpt-order').checked = true;
     }
     </script>
 </form>
