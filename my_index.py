@@ -14,12 +14,6 @@ from mod_whoosh import CleanupStandardAnalyzer, CleanupStemmingAnalyzer
 # todo manually search for and fix these where a misplaced asterisk breaks italics: \*[^*]*? \*
 
 def pre_process_book(book, text):
-    if book['abbr'] == 'DEaVF2':
-        text = text.replace('\nTHE** H**ANDICAPPED**.\n\n\n\n\n',
-                            '\nTHE** H**ANDICAPPED**.\n\n\n\n## **SESSION 906, MARCH 6, 1980  \n8:52 P.M. THURSDAY**\n')
-    if book['abbr'] == 'TPS7':
-        text = text.replace('\n***DELETED***\n', '\n***DELETED SESSION***\n')
-
     # strip space before ending asterisk from Markdown for CommonMark
     text = re.sub(r' \*$', r'*', text, flags=re.MULTILINE)
 
