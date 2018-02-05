@@ -205,6 +205,9 @@ def search_whoosh(query_str):
             page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=HITS_PER_CONTENT_PAGE)
             state['result_type'] = 'single' if all_same_session(page_results) else 'multiple'
 
+        if remove_redundant_sorting():
+            return stateful_redirect('search_form')
+
         og_description = ""
         try:
             result = {
@@ -218,6 +221,21 @@ def search_whoosh(query_str):
             return stateful_redirect('search_form', excerpt_order='rel')
 
         return render_template("search-form.html", **url_state, **result, query_str=query_str, books=Books.indexed, doc_count=ix.doc_count())
+
+
+# noinspection PyTypeChecker
+def remove_redundant_sorting():
+    same_as_none = url_state['hit_order'] == computed_hit_order(None)
+    no_effect = url_state['hit_order'] is not None and state['result_type'] == 'single'
+    remove_hit = same_as_none or no_effect
+
+    same_as_none = url_state['excerpt_order'] == computed_excerpt_order(None)
+    no_effect = url_state['excerpt_order'] is not None and state['result_type'] == 'listing'
+    remove_excerpt = same_as_none or no_effect
+
+    url_state['hit_order'] = None if remove_hit else url_state['hit_order']
+    url_state['excerpt_order'] = None if remove_excerpt else url_state['excerpt_order']
+    return remove_hit or remove_excerpt
 
 
 def get_html_correction(searcher, query_str, qp):
@@ -474,13 +492,13 @@ def get_single_session_url(query_str, hit):
         session = re.sub(r'\s+', ' ', session).strip()
         session = re.sub(r'^session ', r'', session, flags=re.IGNORECASE)
         q_query = urlize('session:"{}" {}'.format(session, query_str), in_href=True)
-        result = stateful_url_for('search_form', q_query=q_query, page_num=None) + 's/'
+        result = stateful_url_for('search_form', q_query=q_query, hit_order=None, excerpt_order=None, page_num=None) + 's/'
     else:
         # a bit hackish, in this case 'short' happens to be only the heading
         heading = re.sub(r'[^\w’]', ' ', hit['short'])
         heading = re.sub(r'\s+', ' ', heading).strip()
         q_query = urlize('book:{} heading:"{}" {}'.format(hit['book_abbr'].lower(), heading, query_str), in_href=True)
-        result = stateful_url_for('search_form', q_query=q_query, page_num=None) + 's/'
+        result = stateful_url_for('search_form', q_query=q_query, hit_order=None, excerpt_order=None, page_num=None) + 's/'
     return result
 
 
