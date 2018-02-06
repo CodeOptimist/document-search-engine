@@ -151,13 +151,13 @@
     <input id="submit" type="submit" value="Search">
     {{ correction|safe }}
     <p>Hit order:
-        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" id="hit-order-rel" value="rel" required{% if computed_hit_order() not in ('asc', 'desc') %} checked{% endif %}> relevance</label>
+        <label><input type="radio" onclick="hitOrder(this);" name="hit-order" id="hit-order-rel" value="rel" required{% if computed_hit_order() == 'rel' %} checked{% endif %}> relevance</label>
         <label><input type="radio" onclick="hitOrder(this);" name="hit-order" id="hit-order-asc" value="asc"{% if computed_hit_order() == 'asc' %} checked{% endif %}> earliest</label>
         <label><input type="radio" onclick="hitOrder(this);" name="hit-order" id="hit-order-desc" value="desc"{% if computed_hit_order() == 'desc' %} checked{% endif %}> latest</label>
         <input type="checkbox" name="explicit-hit-order" id="explicit-hit-order" hidden>
     </p>
     <p>Excerpt order:
-        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-rel" value="rel" required{% if computed_excerpt_order() != 'pos' %} checked{% endif %}> relevance</label>
+        <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-rel" value="rel" required{% if computed_excerpt_order() == 'rel' %} checked{% endif %}> relevance</label>
         <label><input type="radio" onclick="excerptOrder(this);" name="excerpt-order" id="excerpt-order-pos" value="pos"{% if computed_excerpt_order() == 'pos' %} checked{% endif %}> position</label>
         <input type="checkbox" name="explicit-excerpt-order" id="explicit-excerpt-order" hidden>
     </p>
