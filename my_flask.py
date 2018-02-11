@@ -8,19 +8,16 @@ import html
 
 from CommonMark import commonmark
 from bs4 import BeautifulSoup
-from flask import Flask, request, render_template
-from flask import redirect
-from flask import url_for
+from flask import Flask, request, render_template, redirect, url_for
 from whoosh import highlight, index
 from whoosh.qparser import QueryParser
 from whoosh.qparser.dateparse import DateParserPlugin
-# noinspection PyProtectedMember
 from whoosh.query.qcore import NullQuery
 from whoosh.scoring import BM25F
 
 import my_index
 from books import Books
-from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer, DescDateBM25F, AscDateBM25F, get_sentence_fragments
+from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer, DescDateBM25F, AscDateBM25F, get_sentence_fragments, HtmlNumberedParagraphFormatter
 
 app = Flask(__name__)
 # occasionally a single session straddles 2 chapters, which are different hits
@@ -32,8 +29,6 @@ SINGLE_HIT_EXCERPT_LIMIT = 50    # effectively ALL of them, I would think
 SINGLE_HIT_COPY_EXCERPT_LIMIT = 10
 EXCERPT_OMISSION_THRESHOLD = max(SINGLE_HIT_EXCERPT_LIMIT, MULTIPLE_HIT_EXCERPT_LIMIT)
 DEFAULT_FIELD = 'stemmed'
-state = {}
-url_state = {}
 
 
 @app.template_filter('volumes_link')
@@ -56,17 +51,20 @@ def computed_hit_order(of_default=False):
 
 
 def computed_excerpt_order(of_default=False):
-    result_type = state['result_type'] if 'result_type' in state else None
     if of_default or url_state['excerpt_order'] is None:
-        return 'pos' if result_type == 'single' else 'rel'
+        return 'pos' if 'single' in result_type else 'rel'
     return url_state['excerpt_order']
+
+
+def get_result_type():
+    return result_type
 
 
 @app.context_processor
 def template_functions():
     def example(q, desc):
         return '<a href="/q/{}/" title="{}">{}</a>'.format(urlize(q, in_href=True), html.escape(desc), q)
-    return dict(example=example, computed_hit_order=computed_hit_order, computed_excerpt_order=computed_excerpt_order)
+    return dict(example=example, computed_hit_order=computed_hit_order, computed_excerpt_order=computed_excerpt_order, get_result_type=get_result_type)
 
 
 def pretty_redirect(url):
@@ -123,7 +121,7 @@ def urlize(s, in_href=False, undo=False):
 @app.route('/q/<q_query>/h/<hit_order>/e/<excerpt_order>/', methods=['GET', 'POST'])
 @app.route('/q/<q_query>/h/<hit_order>/e/<excerpt_order>/<page_num>/', methods=['GET', 'POST'])
 def search_form(os_query=None, q_query=None, hit_order=None, excerpt_order=None, page_num=None):
-    state.clear()
+    result_type = None
     url_state.update(locals().copy())
 
     # redirect POST to GET
@@ -175,6 +173,7 @@ def get_valid_num(num):
 
 
 def search_whoosh(query_str):
+    global result_type
     weighting = AscDateBM25F if computed_hit_order() == 'asc' else DescDateBM25F if computed_hit_order() == 'desc' else BM25F
     with ix.searcher(weighting=weighting) as searcher:
         to_session = request.base_url.endswith('/s/')
@@ -201,10 +200,10 @@ def search_whoosh(query_str):
 
         if highlight_field is None:
             page_results = searcher.search_page(qp, pagenum=1, pagelen=HITS_PER_LISTING_PAGE)
-            state['result_type'] = 'listing'
+            result_type = 'listing'
         else:
             page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=HITS_PER_CONTENT_PAGE)
-            state['result_type'] = 'single' if all_same_session(page_results) else 'multiple'
+            result_type = 'single_1' if len(page_results) == 1 else 'single_many' if all_same_session(page_results) else 'multiple'
 
         if remove_redundant_sorting(page_results):
             return stateful_redirect('search_form')
@@ -226,11 +225,11 @@ def search_whoosh(query_str):
 
 def remove_redundant_sorting(page_results):
     same_as_default = url_state['hit_order'] == computed_hit_order(True)
-    no_effect = url_state['hit_order'] is not None and state['result_type'] == 'single' and page_results.scored_length() < 2
+    no_effect = url_state['hit_order'] is not None and 'single' in result_type and page_results.scored_length() < 2
     remove_hit = same_as_default or no_effect
 
     same_as_default = url_state['excerpt_order'] == computed_excerpt_order(True)
-    no_effect = url_state['excerpt_order'] is not None and state['result_type'] == 'listing'
+    no_effect = url_state['excerpt_order'] is not None and result_type == 'listing'
     remove_excerpt = same_as_default or no_effect
 
     url_state['hit_order'] = None if remove_hit else url_state['hit_order']
@@ -324,7 +323,7 @@ def get_html_coverage(hit, highlights):
     coverage = num_highlight_paragraphs / num_doc_paragraphs
 
     is_copy = False
-    if state['result_type'] == 'single' and computed_excerpt_order() == 'pos':
+    if 'single' in result_type and computed_excerpt_order() == 'pos':
         if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == SINGLE_HIT_EXCERPT_LIMIT):
             is_copy = True
 
@@ -350,15 +349,15 @@ def get_html_results(query_str, qp, page_results, highlight_field):
     page_results.results.fragmenter = ParagraphFragmenter()
     page_results.results.order = highlight.FIRST if computed_excerpt_order() == 'pos' else highlight.SCORE
     page_results.results.scorer = ConsistentFragmentScorer()
-    page_results.results.formatter = highlight.HtmlFormatter(between='')
+    page_results.results.formatter = HtmlNumberedParagraphFormatter(id_tag=r'<span id="{}" class="hash"></span>', between='')
 
-    result += '<div class="{}">'.format(state['result_type'])
+    result += '<div class="{}">'.format(result_type)
     for hit_idx, hit in enumerate(page_results):
         html_hit = get_html_hit(query_str, highlight_field, page_results, hit_idx, hit)
         result += html_hit
     result += '</div>'
 
-    if state['result_type'] == 'single' or page_results.total == 1:
+    if 'single' in result_type or page_results.total == 1:
         more_like = get_html_more_like(page_results)
         result += more_like
     return result
@@ -372,14 +371,14 @@ def get_html_hit(query_str, highlight_field, page_results, hit_idx, hit):
     result = '<div class="hit">\n'
 
     html_hit_link = get_single_session_url(query_str, hit)
-    html_hit_heading = get_html_hit_heading(state['result_type'], "hit-{}".format(hit_idx), hit, html_hit_link)
+    html_hit_heading = get_html_hit_heading(result_type, "hit-{}".format(hit_idx), hit, html_hit_link)
 
     html_excerpts = ""
-    if state['result_type'] in ('single', 'multiple'):
-        limit = SINGLE_HIT_EXCERPT_LIMIT if state['result_type'] == 'single' else MULTIPLE_HIT_EXCERPT_LIMIT + 1
+    if 'single' in result_type or result_type == 'multiple':
+        limit = SINGLE_HIT_EXCERPT_LIMIT if 'single' in result_type else MULTIPLE_HIT_EXCERPT_LIMIT + 1
         highlights = hit.highlights(highlight_field or DEFAULT_FIELD, top=limit)
         is_copy, html_coverage = get_html_coverage(hit, highlights)
-        if state['result_type'] == 'single':
+        if 'single' in result_type:
             html_hit_heading = html_hit_heading.replace('<!--coverage-->', html_coverage)
         if is_copy:
             is_ordered_implicitly = url_state['excerpt_order'] is None
@@ -401,7 +400,7 @@ def get_html_hit_heading(result_type, hit_id, hit, html_hit_link):
 
     if result_type == 'multiple':
         result += '<a href="{1}" class="heading">{0[book_abbr]} {0[short]}</a>\n'.format(hit, html_hit_link)
-    elif result_type in ('single', 'listing'):
+    elif 'single' in result_type or result_type == 'listing':
         result += '<span class="heading">{0[book_abbr]} {0[short]}</span>\n'.format(hit)
     else:
         raise AssertionError
@@ -452,28 +451,37 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights, is_copy):
         if is_copy and p_idx == SINGLE_HIT_COPY_EXCERPT_LIMIT:
             break
 
-        if state['result_type'] == 'multiple' and p_idx == MULTIPLE_HIT_EXCERPT_LIMIT:
+        if result_type == 'multiple' and p_idx == MULTIPLE_HIT_EXCERPT_LIMIT:
             result += '<li><p><a href="{}"> More... </a></p></li>\n'.format(hit_link)
             continue
 
+        re_p_num = page_results.results.formatter.id_tag.format(r'(\d+)')
+        p_num = int(re.match(re_p_num, cm_paragraph).group(1))
+        if result_type != 'single_1':
+            cm_paragraph = re.sub(re_p_num, "", cm_paragraph)
         paragraph = commonmark(cm_paragraph).strip()
 
         if hit_idx == 0 and p_idx == 0:
             update_og_description(page_results.total, paragraph)
 
         is_first_hit_preview = page_results.pagenum == 1 and hit_idx == 0 and p_idx < EXCERPT_OMISSION_THRESHOLD
-        gets_full_paragraph = (state['result_type'] == 'single' or is_first_hit_preview) and not is_copy
+        gets_full_paragraph = ('single' in result_type or is_first_hit_preview) and not is_copy
         if gets_full_paragraph:
             result += '<li>{}</li>\n'.format(paragraph)
         else:
             if p_idx == EXCERPT_OMISSION_THRESHOLD:
                 result += '</ul>\n<hr>\n<ul class="excerpts">\n'
             sentences = get_sentence_fragments(paragraph)
-            if state['result_type'] == 'single':
+
+            if 'single' in result_type:
                 excerpt = ' [...] '.join(sentences)
             else:
-                excerpt = '<a href="{}" class="omission"> [...] </a>'.format(hit_link).join(sentences)
-            result += '<li><p>{}</p></li>\n'.format(excerpt)
+                excerpt = ""
+                for idx, sentence in enumerate(sentences):
+                    excerpt += sentence
+                    if idx != len(sentences) - 1:
+                        excerpt += '<a href="{}#{}" class="omission"> [...] </a>'.format(hit_link, p_num)
+            result += '<li><p>{}{}</p></li>\n'.format(page_results.results.formatter.id_tag.format(p_num) if result_type == 'single_1' else "", excerpt)
 
     result += '</ul>\n'
     return result
@@ -550,6 +558,8 @@ def main():
         ix = get_idx(index_dir)
 
 
+url_state = {}
+result_type = ''
 og_description = ""
 uk_variations = {}
 us_variations = {}

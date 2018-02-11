@@ -21,7 +21,7 @@
 
 # this file is not licensed under https://github.com/CodeOptimist/whoosh-galpin/blob/master/LICENSE
 # it's MIT licensed (given above) for folding into Whoosh proper
-from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer
+from whoosh.highlight import Fragmenter, Fragment, BasicFragmentScorer, HtmlFormatter
 from whoosh.scoring import BM25F
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
@@ -116,7 +116,7 @@ class ParagraphFragmenter(Fragmenter):
 
 class ConsistentFragmentScorer(BasicFragmentScorer):
     def __call__(self, f):
-        score = super(ConsistentFragmentScorer, self).__call__(f)
+        score = super().__call__(f)
 
         # fragment_text = f.text[f.startchar:f.endchar]
         if f.startchar:
@@ -152,3 +152,20 @@ class DescDateBM25F(DateBM25F):
 
 class AscDateBM25F(DateBM25F):
     pass
+
+
+class HtmlNumberedParagraphFormatter(HtmlFormatter):
+    def __init__(self, id_tag, **kwargs):
+        super().__init__(**kwargs)
+        self.id_tag = id_tag
+
+    def format_fragment(self, fragment, replace=False):
+        idx = None
+        for idx, m in enumerate(re.finditer(r'\n{2,}', fragment.text)):
+            if m.start() >= fragment.endchar:
+                break
+        result = super().format_fragment(fragment, replace)
+        if idx is not None:
+            id_html = self.id_tag.format(idx)
+            result = re.sub(r'^(\n+)', r'\1{}'.format(id_html), result)
+        return result
