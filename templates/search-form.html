@@ -3,7 +3,7 @@
 <head>
     <meta name="robots" content="nofollow" />
     <meta name="description" content="A search engine for the Seth material as dictated by Jane Roberts and transcribed by Robert F. Butts." />
-    {% if description %}<meta property="og:description" content="{{ description }}" />{% endif %}
+    {% if og_description %}<meta property="og:description" content="{{ og_description }}" />{% endif %}
     <link type="application/opensearchdescription+xml" rel="search" href="/static/sethcorpus.osdd" />
     <title>{% if query_str %}{{ query_str }} - {% endif %}Seth search engine</title>
     <script>

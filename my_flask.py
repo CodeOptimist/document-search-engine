@@ -182,7 +182,9 @@ def get_valid_num(num):
 
 
 def search_whoosh(query_str):
-    global result_type
+    global result_type, og_description
+    og_description = ""
+
     weighting = AscDateBM25F if computed_hit_order() == 'asc' else DescDateBM25F if computed_hit_order() == 'desc' else BM25F
     with ix.searcher(weighting=weighting) as searcher:
         to_session = request.base_url.endswith('/s/')
@@ -217,13 +219,12 @@ def search_whoosh(query_str):
         if remove_redundant_sorting():
             return stateful_redirect('search_form')
 
-        og_description = ""
         try:
             result = {
                 'results': get_html_results(query_str, qp, page_results, highlight_field),
                 'correction': get_html_correction(searcher, query_str, qp),
-                'description': og_description,
                 'pagination': get_html_pagination(page_results),
+                'og_description': og_description,
                 'query_str': query_str,
                 'books': Books.indexed,
                 'doc_count': ix.doc_count(),
