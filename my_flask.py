@@ -27,7 +27,6 @@ HITS_PER_LISTING_PAGE = 150
 MULTIPLE_HIT_EXCERPT_LIMIT = 3
 SINGLE_HIT_EXCERPT_LIMIT = 50    # effectively ALL of them, I would think
 SINGLE_HIT_COPY_EXCERPT_LIMIT = 10
-EXCERPT_OMISSION_THRESHOLD = max(SINGLE_HIT_EXCERPT_LIMIT, MULTIPLE_HIT_EXCERPT_LIMIT)
 DEFAULT_FIELD = 'stemmed'
 
 
@@ -56,6 +55,12 @@ def computed_excerpt_order(of_default=False):
     return url_state['excerpt_order']
 
 
+def readable_layout(include_semantic_single=False):
+    if computed_excerpt_order() != 'pos':
+        return False
+    return 'single' in result_type if include_semantic_single else result_type == 'single_1'
+
+
 def get_result_type():
     return result_type
 
@@ -64,7 +69,9 @@ def get_result_type():
 def template_functions():
     def example(q, desc):
         return '<a href="/q/{}/" title="{}">{}</a>'.format(urlize(q, in_href=True), html.escape(desc), q)
-    return dict(example=example, computed_hit_order=computed_hit_order, computed_excerpt_order=computed_excerpt_order, get_result_type=get_result_type)
+
+    return dict(example=example, computed_hit_order=computed_hit_order, computed_excerpt_order=computed_excerpt_order,
+                get_result_type=get_result_type, readable_layout=readable_layout)
 
 
 def pretty_redirect(url):
@@ -121,7 +128,9 @@ def urlize(s, in_href=False, undo=False):
 @app.route('/q/<q_query>/h/<hit_order>/e/<excerpt_order>/', methods=['GET', 'POST'])
 @app.route('/q/<q_query>/h/<hit_order>/e/<excerpt_order>/<page_num>/', methods=['GET', 'POST'])
 def search_form(os_query=None, q_query=None, hit_order=None, excerpt_order=None, page_num=None):
-    result_type = None
+    global result_type, hit_extras
+    result_type = ""
+    hit_extras.clear()
     url_state.update(locals().copy())
 
     # redirect POST to GET
@@ -316,24 +325,24 @@ def all_same_session(results):
     return result
 
 
-def get_html_coverage(hit, highlights):
-    full_doc_text = hit['exact']
-    num_highlight_paragraphs = highlights.count('\n')
-    num_doc_paragraphs = full_doc_text.count('\n\n')
-    coverage = num_highlight_paragraphs / num_doc_paragraphs
+def update_hit_extras(hit, highlights):
+    global hit_extras
+    extras = {
+        'num_highlight_p': highlights.count('\n'),
+        'num_doc_p': len(re.findall(r'\n{2,}', hit['exact'].strip())),
+    }
+    extras['coverage'] = extras['num_highlight_p'] / extras['num_doc_p']
+    hit_extras[(hit.docnum, hit.results.q)] = extras
 
-    is_copy = False
-    if 'single' in result_type and computed_excerpt_order() == 'pos':
-        if len(full_doc_text) > 1500 and (coverage > 0.5 or num_highlight_paragraphs == SINGLE_HIT_EXCERPT_LIMIT):
-            is_copy = True
 
-    if is_copy:
-        num_highlight_paragraphs = min(num_highlight_paragraphs, SINGLE_HIT_COPY_EXCERPT_LIMIT)
-        coverage = num_highlight_paragraphs / num_doc_paragraphs
-    html_coverage = '<span class="coverage" title="excerpts/paragraphs">{}/{} ({}%)</span>'.format(
-        num_highlight_paragraphs, num_doc_paragraphs, round(coverage * 100))
-    result = is_copy, html_coverage
-    return result
+def extras(hit):
+    return hit_extras[(hit.docnum, hit.results.q)]
+
+
+def is_copy(hit):
+    is_long = len(hit['exact']) > 1500
+    is_high_coverage = extras(hit)['coverage'] > 0.5 or extras(hit)['num_highlight_p'] == SINGLE_HIT_EXCERPT_LIMIT
+    return readable_layout(True) and is_long and is_high_coverage
 
 
 def get_html_results(query_str, qp, page_results, highlight_field):
@@ -353,7 +362,7 @@ def get_html_results(query_str, qp, page_results, highlight_field):
 
     result += '<div class="{}">'.format(result_type)
     for hit_idx, hit in enumerate(page_results):
-        html_hit = get_html_hit(query_str, highlight_field, page_results, hit_idx, hit)
+        html_hit = get_html_hit(query_str, highlight_field, page_results, hit_idx)
         result += html_hit
     result += '</div>'
 
@@ -367,7 +376,8 @@ class DocumentCopy(Exception):
     pass
 
 
-def get_html_hit(query_str, highlight_field, page_results, hit_idx, hit):
+def get_html_hit(query_str, highlight_field, page_results, hit_idx):
+    hit = page_results[hit_idx]
     result = '<div class="hit">\n'
 
     html_hit_link = get_single_session_url(query_str, hit)
@@ -377,17 +387,20 @@ def get_html_hit(query_str, highlight_field, page_results, hit_idx, hit):
     if 'single' in result_type or result_type == 'multiple':
         limit = SINGLE_HIT_EXCERPT_LIMIT if 'single' in result_type else MULTIPLE_HIT_EXCERPT_LIMIT + 1
         highlights = hit.highlights(highlight_field or DEFAULT_FIELD, top=limit)
-        is_copy, html_coverage = get_html_coverage(hit, highlights)
+        update_hit_extras(hit, highlights)
+
         if 'single' in result_type:
+            html_coverage = '<span class="coverage" title="excerpts/paragraphs">{}/{} ({}%)</span>'.format(
+                extras(hit)['num_highlight_p'], extras(hit)['num_doc_p'], round(extras(hit)['coverage'] * 100))
             html_hit_heading = html_hit_heading.replace('<!--coverage-->', html_coverage)
-        if is_copy:
+        if is_copy(hit):
             is_ordered_implicitly = url_state['excerpt_order'] is None
             if is_ordered_implicitly:
                 raise DocumentCopy
             result += """<h4>These excerpts have been limited due to closely matching the copyrighted work.<br />
             For full results please <a onclick="document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
              href="javascript:void(0);">sort excerpts by relevance</a>, or narrow your search.</h4>\n"""
-        html_excerpts = get_html_excerpts(page_results, hit_idx, html_hit_link, highlights, is_copy)
+        html_excerpts = get_html_excerpts(page_results, hit_idx, html_hit_link, highlights)
 
     result += html_hit_heading
     result += html_excerpts
@@ -444,47 +457,58 @@ def get_html_more_like(results):
     return result
 
 
-def get_html_excerpts(page_results, hit_idx, hit_link, highlights, is_copy):
+def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
     global og_description
-    result = '<ul class="excerpts">\n'
+    hit = page_results[hit_idx]
+    last_p_num = 0
+    result = ""
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
-        if is_copy and p_idx == SINGLE_HIT_COPY_EXCERPT_LIMIT:
+        if is_copy(hit) and p_idx == SINGLE_HIT_COPY_EXCERPT_LIMIT:
             break
 
         if result_type == 'multiple' and p_idx == MULTIPLE_HIT_EXCERPT_LIMIT:
-            result += '<li><p><a href="{}"> More... </a></p></li>\n'.format(hit_link)
+            result += '<div data-content="•"></div><p><a href="{}"> More... </a></p>\n'.format(hit_link)
             continue
 
-        re_p_num = page_results.results.formatter.id_tag.format(r'(\d+)')
+        re_p_num = hit.results.formatter.id_tag.format(r'(\d+)')
         p_num = int(re.match(re_p_num, cm_paragraph).group(1))
-        if result_type != 'single_1':
-            cm_paragraph = re.sub(re_p_num, "", cm_paragraph)
-        paragraph = commonmark(cm_paragraph).strip()
+        if readable_layout():
+            hidden_p_count = p_num - last_p_num - 1
+            last_p_num = p_num
+            if hidden_p_count > 1:
+                result += '\n<p>[... {} paragraphs ...]</p>\n'.format(hidden_p_count)
 
+        paragraph = commonmark(cm_paragraph).strip()
         if hit_idx == 0 and p_idx == 0:
             update_og_description(page_results.total, paragraph)
 
-        is_first_hit_preview = page_results.pagenum == 1 and hit_idx == 0 and p_idx < EXCERPT_OMISSION_THRESHOLD
-        gets_full_paragraph = ('single' in result_type or is_first_hit_preview) and not is_copy
-        if gets_full_paragraph:
-            result += '<li>{}</li>\n'.format(paragraph)
-        else:
-            if p_idx == EXCERPT_OMISSION_THRESHOLD:
-                result += '</ul>\n<hr>\n<ul class="excerpts">\n'
+        is_first_hit_preview = page_results.pagenum == 1 and hit_idx == 0
+        gets_full_paragraph = ('single' in result_type or is_first_hit_preview) and not is_copy(hit)
+        if not gets_full_paragraph:
             sentences = get_sentence_fragments(paragraph)
+            fragmented_paragraph = get_html_fragmented_paragraph(hit_link, p_num, sentences)
+            paragraph = '<p>{}{}</p>'.format(hit.results.formatter.id_tag.format(p_num) if result_type == 'single_1' else "", fragmented_paragraph)
+        if not readable_layout():
+            paragraph = '<div data-content="{}{}"></div>{}'.format('¶', p_num, paragraph)
+        result += '{}\n'.format(paragraph)
 
-            if 'single' in result_type:
-                excerpt = ' [...] '.join(sentences)
-            else:
-                excerpt = ""
-                for idx, sentence in enumerate(sentences):
-                    excerpt += sentence
-                    if idx != len(sentences) - 1:
-                        excerpt += '<a href="{}#{}" class="omission"> [...] </a>'.format(hit_link, p_num)
-            result += '<li><p>{}{}</p></li>\n'.format(page_results.results.formatter.id_tag.format(p_num) if result_type == 'single_1' else "", excerpt)
-
-    result += '</ul>\n'
+    num_hidden_remaining = extras(hit)['num_doc_p'] - last_p_num
+    if readable_layout() and num_hidden_remaining > 1:
+        result += '\n<p>[... {} paragraphs ...]</p>\n'.format(num_hidden_remaining)
+    result = '<div class="excerpts">\n{}</div>\n'.format(result)
     return result
+
+
+def get_html_fragmented_paragraph(hit_link, p_num, sentences):
+    if 'single' in result_type:
+        excerpt = ' [...] '.join(sentences)
+    else:
+        excerpt = ""
+        for idx, sentence in enumerate(sentences):
+            excerpt += sentence
+            if idx != len(sentences) - 1:
+                excerpt += '<a href="{}#{}" class="omission"> [...] </a>'.format(hit_link, p_num)
+    return excerpt
 
 
 def update_og_description(num_results, paragraph):
@@ -559,6 +583,7 @@ def main():
 
 
 url_state = {}
+hit_extras = {}
 result_type = ''
 og_description = ""
 uk_variations = {}

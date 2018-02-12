@@ -56,11 +56,16 @@
             event.preventDefault();
             var heading = excerpts.parentNode.childNodes[3].innerHTML;
 
-            var copyText = selection.toString().trim().replace(/  +/g, " ");
-            if (copyText.indexOf("\n\n") == -1)
+            var copyText = selection.toString().trim().replace(/ {2,}/g, ' ');
+            if (copyText.indexOf("\n\n") === -1) {
                 copyText = '"' + copyText + '"';
-            else
-                copyText = '• "' + copyText.replace(/(\n\n)/g, '"$1• "') + '"\n';
+            } else {
+                {% if readable_layout() %}
+                copyText ='"' + copyText + '"\n';
+                {% else %}
+                copyText = '• "' + copyText.replace(/(\n{2,})/g, '"$1• "') + '"\n';
+                {% endif %}
+            }
             copyText += "\n—" + heading;
             event.clipboardData.setData('Text', copyText);
         }
@@ -79,6 +84,20 @@
 
         .single_1 .hit, .single_many .hit, .multiple .hit {margin-bottom: 1.5em;}
         .listing .hit, .similar-hit {margin-bottom: 1em;}
+
+        {% if readable_layout() %}
+        .excerpts {padding-left: 2.5em;}
+        {% else %}
+        .excerpts {
+            display: grid;
+            grid-template-columns: 5em 1fr;
+            align-items: center;
+            margin-top: 0.5em;
+        }
+        .excerpts > div[data-content] {justify-self: center;}
+        .excerpts > p {margin: 0.5em 0;}
+        {% endif %}
+        .excerpts div[data-content]::before {content: attr(data-content);}
 
         #pagination a, h1 a, .examples a, .books a, .omission {text-decoration: none;}
         h1 a {color: inherit;}
