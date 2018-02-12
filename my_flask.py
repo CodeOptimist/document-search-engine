@@ -26,7 +26,7 @@ HITS_PER_CONTENT_PAGE = 10
 HITS_PER_LISTING_PAGE = 150
 MULTIPLE_HIT_EXCERPT_LIMIT = 3
 SINGLE_HIT_EXCERPT_LIMIT = 50    # effectively ALL of them, I would think
-SINGLE_HIT_COPY_EXCERPT_LIMIT = 10
+HIT_EXPOSED_EXCERPT_LIMIT = 10
 DEFAULT_FIELD = 'stemmed'
 
 
@@ -224,12 +224,14 @@ def search_whoosh(query_str):
                 'correction': get_html_correction(searcher, query_str, qp),
                 'description': og_description,
                 'pagination': get_html_pagination(page_results),
+                'query_str': query_str,
+                'books': Books.indexed,
+                'doc_count': ix.doc_count(),
             }
             result['scroll'] = None if result['correction'] else "results"
-        except DocumentCopy:
+        except RelevantExcerptsBuriedError:
             return stateful_redirect('search_form', excerpt_order='rel')
-
-        return render_template("search-form.html", **url_state, **result, query_str=query_str, books=Books.indexed, doc_count=ix.doc_count())
+        return render_template("search-form.html", **url_state, **result)
 
 
 def remove_redundant_sorting():
@@ -333,10 +335,10 @@ def extras(hit):
     return hit_extras[(hit.docnum, hit.results.q)]
 
 
-def is_copy(hit):
+def is_exposed(hit):
     is_long = len(hit['exact']) > 1500
     is_high_coverage = extras(hit)['coverage'] > 0.5 or extras(hit)['num_highlight_p'] == SINGLE_HIT_EXCERPT_LIMIT
-    return readable_layout(True) and is_long and is_high_coverage
+    return 'single' in result_type and is_long and is_high_coverage
 
 
 def get_html_results(query_str, qp, page_results, highlight_field):
@@ -366,7 +368,7 @@ def get_html_results(query_str, qp, page_results, highlight_field):
     return result
 
 
-class DocumentCopy(Exception):
+class RelevantExcerptsBuriedError(Exception):
     pass
 
 
@@ -387,13 +389,11 @@ def get_html_hit(query_str, highlight_field, page_results, hit_idx):
             html_coverage = '<span class="coverage" title="excerpts/paragraphs">{}/{} ({}%)</span>'.format(
                 extras(hit)['num_highlight_p'], extras(hit)['num_doc_p'], round(extras(hit)['coverage'] * 100))
             html_hit_heading = html_hit_heading.replace('<!--coverage-->', html_coverage)
-        if is_copy(hit):
-            is_ordered_implicitly = url_state['excerpt_order'] is None
-            if is_ordered_implicitly:
-                raise DocumentCopy
-            result += """<h4>These excerpts have been limited due to closely matching the copyrighted work.<br />
-            For full results please <a onclick="document.getElementById('excerpt-order-rel').click();document.getElementById('submit').click();"
-             href="javascript:void(0);">sort excerpts by relevance</a>, or narrow your search.</h4>\n"""
+        if is_exposed(hit):
+            if computed_excerpt_order() != 'rel':
+                raise RelevantExcerptsBuriedError
+            result += """<h4>These excerpts have been reduced due to the original results revealing too much of the copyrighted work.<br />
+            For more complete excerpts it may be necessary to use less common terms.</h4>\n"""
         html_excerpts = get_html_excerpts(page_results, hit_idx, html_hit_link, highlights)
 
     result += html_hit_heading
@@ -457,7 +457,7 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
     last_p_num = 0
     result = ""
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
-        if is_copy(hit) and p_idx == SINGLE_HIT_COPY_EXCERPT_LIMIT:
+        if is_exposed(hit) and p_idx == HIT_EXPOSED_EXCERPT_LIMIT:
             break
 
         if result_type == 'multiple' and p_idx == MULTIPLE_HIT_EXCERPT_LIMIT:
@@ -477,7 +477,7 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
             update_og_description(page_results.total, paragraph)
 
         is_first_hit_preview = page_results.pagenum == 1 and hit_idx == 0
-        gets_full_paragraph = ('single' in result_type or is_first_hit_preview) and not is_copy(hit)
+        gets_full_paragraph = ('single' in result_type or is_first_hit_preview) and not is_exposed(hit)
         if not gets_full_paragraph:
             sentences = get_sentence_fragments(paragraph)
             fragmented_paragraph = get_html_fragmented_paragraph(hit_link, p_num, sentences)
