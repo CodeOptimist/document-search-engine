@@ -41,16 +41,16 @@ def book_link(book):
     return get_html_book_link((book['abbr'], book['name']))
 
 
-def computed_hit_order(of_default=False):
+def computed_hit_order(of_none=False):
     # hit weighting is given BEFORE a search, so don't check result type, length, etc.
     # but we're fine because we'll have already put the ordering we want in the url
-    if of_default or url_state['hit_order'] is None:
+    if of_none or url_state['hit_order'] is None:
         return 'rel'
     return url_state['hit_order']
 
 
-def computed_excerpt_order(of_default=False):
-    if of_default or url_state['excerpt_order'] is None:
+def computed_excerpt_order(of_none=False):
+    if of_none or url_state['excerpt_order'] is None:
         return 'pos' if 'single' in result_type else 'rel'
     return url_state['excerpt_order']
 
@@ -214,7 +214,7 @@ def search_whoosh(query_str):
             page_results = searcher.search_page(qp, pagenum=url_state['page_num'] or 1, pagelen=HITS_PER_CONTENT_PAGE)
             result_type = 'single_1' if len(page_results) == 1 else 'single_many' if all_same_session(page_results) else 'multiple'
 
-        if remove_redundant_sorting(page_results):
+        if remove_redundant_sorting():
             return stateful_redirect('search_form')
 
         og_description = ""
@@ -232,15 +232,9 @@ def search_whoosh(query_str):
         return render_template("search-form.html", **url_state, **result, query_str=query_str, books=Books.indexed, doc_count=ix.doc_count())
 
 
-def remove_redundant_sorting(page_results):
-    same_as_default = url_state['hit_order'] == computed_hit_order(True)
-    no_effect = url_state['hit_order'] is not None and 'single' in result_type and page_results.scored_length() < 2
-    remove_hit = same_as_default or no_effect
-
-    same_as_default = url_state['excerpt_order'] == computed_excerpt_order(True)
-    no_effect = url_state['excerpt_order'] is not None and result_type == 'listing'
-    remove_excerpt = same_as_default or no_effect
-
+def remove_redundant_sorting():
+    remove_hit = url_state['hit_order'] is not None and url_state['hit_order'] == computed_hit_order(True)
+    remove_excerpt = url_state['excerpt_order'] is not None and url_state['excerpt_order'] == computed_excerpt_order(True)
     url_state['hit_order'] = None if remove_hit else url_state['hit_order']
     url_state['excerpt_order'] = None if remove_excerpt else url_state['excerpt_order']
     return remove_hit or remove_excerpt
