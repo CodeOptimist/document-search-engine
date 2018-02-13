@@ -94,13 +94,19 @@ function excerptOrder(radio) {
     document.getElementById('explicit-excerpt-order').checked = true;
 }
 
-if (location.hash) {
-    if (history && history.replaceState) {
-        document.getElementById(location.hash.replace('#', '')).scrollIntoView();
-        history.replaceState(null, null, '.');
+(function () {
+    var elem;
+    if (location.hash) {
+        if (history && history.replaceState) {
+            elem = document.getElementById(location.hash.replace('#', ''));
+            if (!elem) elem = document.getElementById(gScrollTo);
+            if (elem)
+                elem.scrollIntoView();
+            history.replaceState(null, null, '.');
+        }
+    } else {
+        elem = document.getElementById(gScrollTo);
+        if (elem)
+            elem.scrollIntoView();
     }
-} else {
-    var elem = document.getElementById(gScrollTo);
-    if (elem)
-        elem.scrollIntoView();
-}
+})();

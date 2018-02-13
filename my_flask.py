@@ -52,10 +52,8 @@ def computed_excerpt_order(of_none=False):
     return url_state['excerpt_order']
 
 
-def readable_layout(include_semantic_single=False):
-    if computed_excerpt_order() != 'pos':
-        return False
-    return 'single' in result_type if include_semantic_single else result_type == 'single_1'
+def readable_layout():
+    return computed_excerpt_order() == 'pos' and 'single' in result_type
 
 
 def get_result_type():
@@ -469,6 +467,7 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
             if hidden_p_count > 1:
                 result += '\n<p>[... {} paragraphs ...]</p>\n'.format(hidden_p_count)
 
+        cm_paragraph = re.sub(re_p_num, "", cm_paragraph)
         paragraph = commonmark(cm_paragraph).strip()
         if hit_idx == 0 and p_idx == 0:
             update_og_description(page_results.total, paragraph)
@@ -477,8 +476,11 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
         gets_full_paragraph = ('single' in result_type or is_first_hit_preview) and not is_exposed(hit)
         if not gets_full_paragraph:
             sentences = get_sentence_fragments(paragraph)
-            fragmented_paragraph = get_html_fragmented_paragraph(hit_link, p_num, sentences)
-            paragraph = '<p>{}{}</p>'.format(hit.results.formatter.id_tag.format(p_num) if result_type == 'single_1' else "", fragmented_paragraph)
+            paragraph = get_html_fragmented_paragraph(hit_link, p_num, sentences)
+
+        can_uniquely_id_paragraphs = result_type != 'single_many'
+        if can_uniquely_id_paragraphs:
+            paragraph = re.sub(r'^(<p>)', r'\1{}'.format(hit.results.formatter.id_tag.format(p_num)), paragraph)
         if not readable_layout():
             paragraph = '<div data-content="{}{}"></div>{}'.format('¶', p_num, paragraph)
         result += '{}\n'.format(paragraph)
@@ -499,6 +501,7 @@ def get_html_fragmented_paragraph(hit_link, p_num, sentences):
             excerpt += sentence
             if idx != len(sentences) - 1:
                 excerpt += '<a href="{}#{}" class="omission"> [...] </a>'.format(hit_link, p_num)
+    excerpt = '<p>{}</p>'.format(excerpt)
     return excerpt
 
 

@@ -32,7 +32,7 @@ def get_sentence_fragments(paragraph):
     paragraph_soup = BeautifulSoup(paragraph, 'lxml')
 
     result = []
-    sentence_split = filter(None, re.split(r'(.*?(?:\.”|(?<!\b\w)(?<!\b(?:Dr|Sr|Jr|Mr|Ms))(?<!\bMrs)\.|[?!])[\s$])', paragraph))
+    sentence_split = filter(None, re.split(r'(.*?(?:\.”|(?<!\b\w)(?<!\b(?:Dr|St|Sr|Jr|Mr|Ms))(?<!\bMrs)\.|[?!])[\s$])', paragraph))
     last_match_idx = None
     raw_sentence = ''
     for s_idx, raw_sentence in enumerate(sentence_split):
