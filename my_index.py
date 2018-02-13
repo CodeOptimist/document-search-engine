@@ -223,10 +223,18 @@ def create_index(index_dir):
     return ix
 
 
-def create_index_and_key_terms(index_dir):
+def get_idx(index_dir):
     if not os.path.isdir(index_dir):
         os.mkdir(index_dir)
 
+    try:
+        ix = index.open_dir(index_dir)
+    except index.EmptyIndexError:
+        ix = new_index(index_dir)
+    return ix
+
+
+def new_index(index_dir):
     ix = create_index(index_dir)
     add_key_terms(ix)
     return ix

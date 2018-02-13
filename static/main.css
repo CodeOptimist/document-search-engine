@@ -1,0 +1,51 @@
+body {
+    width: 65em;
+    font-family: Verdana, sans-serif;
+    font-size: 0.9em;
+}
+input {vertical-align: bottom;}
+#search {padding: 0.5em 0;}
+#results, .similar {margin-top: 1.5em;}
+
+.single_1 .hit, .single_many .hit, .multiple .hit {margin-bottom: 1.5em;}
+.listing .hit, .similar-hit {margin-bottom: 1em;}
+
+.excerpts div[data-content]::before {content: attr(data-content);}
+.excerpts-numbered {
+    display: grid;
+    grid-template-columns: 5em 1fr;
+    align-items: center;
+    margin-top: 0.5em;
+}
+.excerpts-numbered > div[data-content] {
+    justify-self: center;
+}
+.excerpts-numbered > p {
+    margin: 0.5em 0;
+}
+.excerpts-readable {
+    padding-left: 2.5em;
+}
+
+#pagination a, h1 a, .examples a, .books a, .omission {text-decoration: none;}
+h1 a {color: inherit;}
+#pagination {
+    text-align: center;
+    margin-bottom: 3em;
+}
+
+#query {width: 30em;}
+.omission {padding: 0 0.2em;}
+.hit-long {
+    font-size: 0.9em;
+    position: relative;
+    left: 1.5em;
+}
+
+.heading, .icons, .coverage, .terms {padding: 0 0.4em;}
+.change {font-style: italic;}
+
+.book-link img, .kindle-link img {
+    vertical-align: text-bottom;
+    height: 1.5em;
+}

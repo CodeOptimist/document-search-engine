@@ -1,13 +1,9 @@
 beautifulsoup4==4.5.1
-click==6.7
 CommonMark==0.7.2
 Flask==0.12.2
-future==0.15.2
 gunicorn==19.6.0
-itsdangerous==0.24
-Jinja2==2.9.6
 lxml==3.6.4
-MarkupSafe==1.0
-six==1.10.0
-Werkzeug==0.12.2
 Whoosh==2.7.4
+Flask-Assets==0.12
+slimit==0.8.1
+cssutils==1.0.2

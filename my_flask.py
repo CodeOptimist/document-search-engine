@@ -1,15 +1,13 @@
 # coding=utf-8
-import argparse
-import os
 import re
-import sys
 import urllib.parse
 import html
+import os
 
 from CommonMark import commonmark
 from bs4 import BeautifulSoup
-from flask import Flask, request, render_template, redirect, url_for
-from whoosh import highlight, index
+from flask import request, render_template, redirect, url_for
+from whoosh import highlight
 from whoosh.qparser import QueryParser
 from whoosh.qparser.dateparse import DateParserPlugin
 from whoosh.query.qcore import NullQuery
@@ -18,8 +16,8 @@ from whoosh.scoring import BM25F
 import my_index
 from books import Books
 from my_whoosh import ParagraphFragmenter, ConsistentFragmentScorer, DescDateBM25F, AscDateBM25F, get_sentence_fragments, HtmlNumberedParagraphFormatter
+from __init__ import app
 
-app = Flask(__name__)
 # occasionally a single session straddles 2 chapters, which are different hits
 MAXIMUM_SAME_SESSION_HITS = 2
 HITS_PER_CONTENT_PAGE = 10
@@ -28,7 +26,6 @@ MULTIPLE_HIT_EXCERPT_LIMIT = 3
 SINGLE_HIT_EXCERPT_LIMIT = 50    # effectively ALL of them, I would think
 HIT_EXPOSED_EXCERPT_LIMIT = 10
 DEFAULT_FIELD = 'stemmed'
-
 
 @app.template_filter('volumes_link')
 def get_html_book_link(tpl):
@@ -229,7 +226,6 @@ def search_whoosh(query_str):
                 'books': Books.indexed,
                 'doc_count': ix.doc_count(),
             }
-            result['scroll'] = None if result['correction'] else "results"
         except RelevantExcerptsBuriedError:
             return stateful_redirect('search_form', excerpt_order='rel')
         return render_template("search-form.html", **url_state, **result)
@@ -415,8 +411,8 @@ def get_html_hit_heading(result_type, hit_id, hit, html_hit_link):
 
     icon = re.sub(r'(tes|tps|tecs)\d', r'\1', hit['book_abbr'].lower())
     result += '<span class="icons">\n'
-    result += '<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/{1}.png"/></a>\n'.format(hit, icon)
-    result += '<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/kindle.png"/></a>\n'.format(hit)
+    result += '<a href="{0[book_tree]}" class="book-link" target="_blank"><img src="/static/img/{1}.png"/></a>\n'.format(hit, icon)
+    result += '<a href="{0[book_kindle]}" class="kindle-link" target="_blank"><img src="/static/img/kindle.png"/></a>\n'.format(hit)
     result += '</span>\n'
 
     result += '<!--coverage-->\n'
@@ -490,7 +486,7 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
     num_hidden_remaining = extras(hit)['num_doc_p'] - last_p_num
     if readable_layout() and num_hidden_remaining > 1:
         result += '\n<p>[... {} paragraphs ...]</p>\n'.format(num_hidden_remaining)
-    result = '<div class="excerpts">\n{}</div>\n'.format(result)
+    result = '<div class="excerpts {}">\n{}</div>\n'.format('excerpts-readable' if readable_layout() else 'excerpts-numbered', result)
     return result
 
 
@@ -529,21 +525,6 @@ def get_single_session_url(query_str, hit):
     return result
 
 
-def get_idx(index_dir):
-    try:
-        ix = index.open_dir(index_dir)
-    except index.EmptyIndexError:
-        ix = my_index.create_index_and_key_terms(index_dir)
-    return ix
-
-
-def test():
-    from whoosh.query import Every
-    results = ix.searcher().search(Every('session'), limit=None)
-    for result in results:
-        pass
-
-
 def load_uk_us_variations():
     for line in open(r'uk_us_variations.txt', encoding='utf-8', mode='r').readlines():
         uk, us = line.strip().split(' ')
@@ -553,30 +534,6 @@ def load_uk_us_variations():
         uk_us_variations.add(us)
 
 
-def main():
-    global ix
-    os.chdir(sys.path[0])
-
-    index_dir = 'index'
-    if __name__ == '__main__':
-        parser = argparse.ArgumentParser()
-        parser.add_argument("-i", "--interactive", help="load search index interactively", action='store_true')
-        parser.add_argument("-r", "--rebuild", help="rebuild index", nargs='?', const="index")
-        parser.add_argument("-t", "--test", help="test", action='store_true')
-        args = parser.parse_args()
-
-        if args.rebuild:
-            ix = my_index.create_index_and_key_terms(args.rebuild)
-        else:
-            ix = get_idx(index_dir)
-            if args.test:
-                test()
-            elif not args.interactive:
-                app.run()
-    else:
-        ix = get_idx(index_dir)
-
-
 url_state = {}
 hit_extras = {}
 result_type = ''
@@ -584,5 +541,6 @@ og_description = ""
 uk_variations = {}
 us_variations = {}
 uk_us_variations = set()
+os.chdir(app.root_path)
 load_uk_us_variations()
-main()
+ix = my_index.get_idx('index')
