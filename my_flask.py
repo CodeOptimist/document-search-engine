@@ -449,7 +449,7 @@ def get_html_more_like(results):
 def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
     global og_description
     hit = page_results[hit_idx]
-    last_p_num = 0
+    p_num_last = 0
     result = ""
     for p_idx, cm_paragraph in enumerate(filter(None, highlights.split('\n'))):
         if is_exposed(hit) and p_idx == HIT_EXPOSED_EXCERPT_LIMIT:
@@ -459,15 +459,15 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
             result += '<div data-content="•"></div><p><a href="{}"> More... </a></p>\n'.format(hit_link)
             continue
 
-        re_p_num = hit.results.formatter.id_tag.format(r'(\d+)')
-        p_num = int(re.match(re_p_num, cm_paragraph).group(1))
+        p_num_re = hit.results.formatter.id_tag.format(r'(\d+)')
+        p_num = int(re.match(p_num_re, cm_paragraph).group(1))
         if readable_layout():
-            hidden_p_count = p_num - last_p_num - 1
-            last_p_num = p_num
-            if hidden_p_count > 1:
-                result += '\n<p>[... {} paragraphs ...]</p>\n'.format(hidden_p_count)
+            p_omitted_count = p_num - p_num_last - 1
+            p_num_last = p_num
+            if p_omitted_count:
+                result += '\n<p>[... {} paragraph{} ...]</p>\n'.format(p_omitted_count, 's' if p_omitted_count > 1 else '')
 
-        cm_paragraph = re.sub(re_p_num, "", cm_paragraph)
+        cm_paragraph = re.sub(p_num_re, "", cm_paragraph)
         paragraph = commonmark(cm_paragraph).strip()
         if hit_idx == 0 and p_idx == 0:
             update_og_description(page_results.total, paragraph)
@@ -485,9 +485,9 @@ def get_html_excerpts(page_results, hit_idx, hit_link, highlights):
             paragraph = '<div data-content="{}{}"></div>{}'.format('¶', p_num, paragraph)
         result += '{}\n'.format(paragraph)
 
-    num_hidden_remaining = extras(hit)['num_doc_p'] - last_p_num
-    if readable_layout() and num_hidden_remaining > 1:
-        result += '\n<p>[... {} paragraphs ...]</p>\n'.format(num_hidden_remaining)
+    p_remaining_count = extras(hit)['num_doc_p'] - p_num_last
+    if readable_layout() and p_remaining_count:
+        result += '\n<p>[... {} paragraph{} ...]</p>\n'.format(p_remaining_count, 's' if p_remaining_count > 1 else '')
     result = '<div class="excerpts {}">\n{}</div>\n'.format('excerpts-readable' if readable_layout() else 'excerpts-numbered', result)
     return result
 
